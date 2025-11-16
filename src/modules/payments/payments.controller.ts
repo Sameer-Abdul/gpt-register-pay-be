@@ -1,16 +1,16 @@
+import { Express } from 'express';
+type MulterFile = Express.Multer.File;
+
 import { Controller, Get, Post, Body, Param, UseInterceptors, UploadedFile, BadRequestException, Req, UsePipes, ValidationPipe } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor, AnyFilesInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 import * as fs from 'fs';
-
-type MulterFile = Express.Multer.File;
 import { promisify } from 'util';
 import { PaymentsService } from './payments.service';
 import { CreatePaymentDto, FileMetadata } from './dto/create-payment.dto';
 import { plainToClass } from 'class-transformer';
 import { validate } from 'class-validator';
-import { Express } from 'express';
 
 
 const writeFile = promisify(fs.writeFile);

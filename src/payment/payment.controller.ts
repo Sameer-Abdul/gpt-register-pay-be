@@ -1,3 +1,6 @@
+import type { Express } from 'express';
+type MulterFile = Express.Multer.File;
+
 import { 
   Controller, 
   Post, 
@@ -13,9 +16,6 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { PaymentService } from './payment.service';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
-import type { Express } from 'express';
-
-type MulterFile = Express.Multer.File;
 
 
 @Controller('api/payment')

@@ -1,8 +1,8 @@
+import { Express } from 'express';
+type MulterFile = Express.Multer.File;
+
 import { Controller, Post, Get, UploadedFile, UseInterceptors, Body, Param, InternalServerErrorException, Put } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import type { Express } from 'express';
-
-type MulterFile = Express.Multer.File;
 import { 
   AssignmentsService, 
   GroupedByState, 
