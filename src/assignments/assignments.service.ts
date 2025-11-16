@@ -1,3 +1,5 @@
+import { Express } from 'express';
+import * as multer from 'multer';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Connection, Not, IsNull, getConnection } from 'typeorm';
