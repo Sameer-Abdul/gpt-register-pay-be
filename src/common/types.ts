@@ -1,6 +1,8 @@
+// Import the Express types
 import { Express } from 'express';
 
-export type MulterFile = Express.Multer.File & {
+// Define the base interface for file properties
+interface BaseFile {
   fieldname: string;
   originalname: string;
   encoding: string;
@@ -11,13 +13,18 @@ export type MulterFile = Express.Multer.File & {
   path?: string;
   buffer?: Buffer;
   stream?: NodeJS.ReadableStream;
-  [key: string]: any; // For any additional properties that might be present
-};
+  [key: string]: any;
+}
 
+// Export the MulterFile type
+export type MulterFile = BaseFile;
+
+// Extend the Express.Multer namespace
 declare global {
   namespace Express {
     namespace Multer {
-      interface File extends MulterFile {}
+      // This tells TypeScript to use our BaseFile interface where Express.Multer.File is used
+      interface File extends BaseFile {}
     }
   }
 }

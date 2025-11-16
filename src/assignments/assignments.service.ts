@@ -425,6 +425,10 @@ export class AssignmentsService {
       // Set basic file information
       assignment.registerId = registerId;
       assignment.fileName = file.originalname;
+      // Ensure buffer is not undefined before assignment
+      if (!file.buffer) {
+        throw new Error('File buffer is empty');
+      }
       assignment.fileData = file.buffer;
       assignment.fileSize = file.size;
       assignment.fileType = file.mimetype;
