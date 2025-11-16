@@ -1,8 +1,6 @@
 
-import { Express } from 'express';
 import * as multer from 'multer';
-
-export type MulterFile = Express.Multer.File;
+import type { MulterFile } from '../../common/types';
 
 import { Controller, Get, Post, Body, Param, UseInterceptors, UploadedFile, BadRequestException, Req, UsePipes, ValidationPipe } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor, AnyFilesInterceptor } from '@nestjs/platform-express';
@@ -124,7 +122,7 @@ export class PaymentsController {
       const fileMetadata: FileMetadata = {
         originalname: file.originalname,
         filename: (file as any).filename || file.originalname,
-        path: file.path,
+        path: (file as any).path || '',
         mimetype: file.mimetype,
         size: file.size,
       };

@@ -1,17 +1,14 @@
-import { Express } from 'express';
-import * as multer from 'multer';
 import { Injectable, NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Payment } from './entities/payment.entity';
 import { Register } from '../register/entities/register.entity';
-
-
+import { MulterFile } from '../common/types';
 
 export interface CreatePaymentDto {
   registrationId: number;
   utrNumber: string;
-  file: Express.Multer.File;
+  file: MulterFile;
 }
 
 @Injectable()

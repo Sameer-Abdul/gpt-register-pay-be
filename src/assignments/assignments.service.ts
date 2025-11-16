@@ -1,6 +1,6 @@
-import { Express } from 'express';
 import * as multer from 'multer';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { MulterFile } from '../common/types';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Connection, Not, IsNull, getConnection } from 'typeorm';
 import { Assignment } from './entities/assignment.entity';
@@ -375,7 +375,7 @@ export class AssignmentsService {
 
   async createAssignment(
     data: any,
-    file: Express.Multer.File
+    file: MulterFile
   ): Promise<{ message: string; assignment: AssignmentResponse }> {
     this.logger.log('Starting createAssignment with data:', { registerId: data.register_id || data.registerId, fileName: file?.originalname });
     
