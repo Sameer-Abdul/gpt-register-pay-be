@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Payment } from './entities/payment.entity';
 import { Register } from '../register/entities/register.entity';
-import { MulterFile } from '../common/types';
+import type { MulterFile } from '../common/types';
 
 export interface CreatePaymentDto {
   registrationId: number;

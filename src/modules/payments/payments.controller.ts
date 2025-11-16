@@ -1,6 +1,6 @@
 
-import * as multer from 'multer';
 import type { MulterFile } from '../../common/types';
+import * as multer from 'multer';
 
 import { Controller, Get, Post, Body, Param, UseInterceptors, UploadedFile, BadRequestException, Req, UsePipes, ValidationPipe } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor, AnyFilesInterceptor } from '@nestjs/platform-express';
@@ -63,7 +63,7 @@ export class PaymentsController {
   async create(
     @Req() req: any,
     @UploadedFile() file: MulterFile,
-  ) {
+  ): Promise<{ success: boolean; data?: any; error?: string }> {
     // Log the raw request body and headers for debugging
     console.log('=== REQUEST DEBUGGING ===');
     console.log('Raw request body:', req.body);
