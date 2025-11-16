@@ -1,5 +1,8 @@
 import { Controller, Post, Get, UploadedFile, UseInterceptors, Body, Param, InternalServerErrorException, Put } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import type { Express } from 'express';
+
+type MulterFile = Express.Multer.File;
 import { 
   AssignmentsService, 
   GroupedByState, 
@@ -16,7 +19,7 @@ export class AssignmentsController {
   @Post()
   @UseInterceptors(FileInterceptor('file'))
   async uploadAssignment(
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile() file: MulterFile,
     @Body() body: { register_id: string; context?: string },
   ): Promise<{ message: string; assignment: AssignmentResponse }> {
     return this.assignmentsService.createAssignment(body, file);

@@ -3,6 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Payment } from './entities/payment.entity';
 import { Register } from '../register/entities/register.entity';
+import { Express } from 'express';
+
 
 export interface CreatePaymentDto {
   registrationId: number;

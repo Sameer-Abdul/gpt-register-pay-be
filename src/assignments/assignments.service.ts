@@ -3,6 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Connection, Not, IsNull, getConnection } from 'typeorm';
 import { Assignment } from './entities/assignment.entity';
 import { Register } from '../register/entities/register.entity';
+import { Express } from 'express';
+
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';

@@ -3,11 +3,15 @@ import { FileInterceptor, FilesInterceptor, AnyFilesInterceptor } from '@nestjs/
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 import * as fs from 'fs';
+
+type MulterFile = Express.Multer.File;
 import { promisify } from 'util';
 import { PaymentsService } from './payments.service';
 import { CreatePaymentDto, FileMetadata } from './dto/create-payment.dto';
 import { plainToClass } from 'class-transformer';
 import { validate } from 'class-validator';
+import { Express } from 'express';
+
 
 const writeFile = promisify(fs.writeFile);
 const exists = promisify(fs.exists);
@@ -57,7 +61,7 @@ export class PaymentsController {
   @UsePipes(new ValidationPipe({ transform: true }))
   async create(
     @Req() req: any,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile() file: MulterFile,
   ) {
     // Log the raw request body and headers for debugging
     console.log('=== REQUEST DEBUGGING ===');

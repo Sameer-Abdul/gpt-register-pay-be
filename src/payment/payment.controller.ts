@@ -13,6 +13,10 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { PaymentService } from './payment.service';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
+import type { Express } from 'express';
+
+type MulterFile = Express.Multer.File;
+
 
 @Controller('api/payment')
 export class PaymentController {
@@ -36,7 +40,7 @@ export class PaymentController {
     }),
   )
   async uploadFile(
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile() file: MulterFile,
     @Body() body: { utrNumber: string; registrationId: string },
   ) {
     // Log incoming request for debugging
