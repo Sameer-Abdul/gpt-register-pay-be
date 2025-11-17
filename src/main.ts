@@ -13,22 +13,25 @@ async function bootstrap() {
   
   // ✅ Allow both local and Vercel frontends
   const allowedOrigins = [
-    'http://localhost:3000',
-    'https://register-event-scheduler-fe.vercel.app',
-  ];
+  'http://localhost:3000',
+  'https://gpt-register-pay-fe-bqh5.vercel.app',
+  'https://gpt-register-pay-fe-bqh5-git-frontend-sameers-projects-ed89dcfa.vercel.app', // preview
+  'https://gpt-register-pay-fe-bqh5-3u0b1fdh4-sameers-projects-ed89dcfa.vercel.app', // preview
+];
 
-  app.enableCors({
-    origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        logger.warn(`❌ Blocked CORS request from: ${origin}`);
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-    credentials: true,
-  });
+
+app.enableCors({
+  origin: (origin, callback) => {
+    if (!origin || origin.includes('vercel.app') || origin === 'http://localhost:3000') {
+      callback(null, true);
+    } else {
+      callback(new Error(`Blocked by CORS: ${origin}`));
+    }
+  },
+  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+  credentials: true,
+});
+
 
   const port = process.env.PORT || 3000;
   await app.listen(port);
