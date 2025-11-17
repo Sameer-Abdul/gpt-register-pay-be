@@ -1,6 +1,6 @@
 // src/app.module.ts
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtModule } from '@nestjs/jwt';
 import { AppController } from './app.controller';
@@ -10,6 +10,11 @@ import { RegisterModule } from './register/register.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { AssignmentsModule } from './assignments/assignments.module';
 import { AuthModule } from './auth/auth.module';
+import { TelegramModule } from './telegram/telegram.module';
+import { Register } from './register/entities/register.entity';
+import { Payment } from './modules/payments/entities/payment.entity';
+import { TelegramLink } from './telegram/entities/telegram-link.entity';
+import { EventsModule } from './events/events.module';
 
 @Module({
   imports: [
@@ -23,10 +28,11 @@ import { AuthModule } from './auth/auth.module';
     }),
     DatabaseModule,
     AuthModule,
-    TypeOrmModule,
     RegisterModule,
     PaymentsModule,
     AssignmentsModule,
+    TelegramModule,
+    EventsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -34,14 +34,14 @@ export class Assignment {
   @Column({ nullable: true })
   rating: number;
 
-  @Column({ name: 'register_state', type: 'varchar', length: 100, nullable: true })
-  registerState: string | null;
+  @Column({ name: 'state', type: 'varchar', length: 100, nullable: true })
+  state: string | null;
 
-  @Column({ name: 'register_district', type: 'varchar', length: 100, nullable: true })
-  registerDistrict: string | null;
+  @Column({ name: 'district', type: 'varchar', length: 100, nullable: true })
+  district: string | null;
 
-  @Column({ name: 'register_mandal', type: 'varchar', length: 100, nullable: true })
-  registerMandal: string | null;
+  @Column({ name: 'mandal', type: 'varchar', length: 100, nullable: true })
+  mandal: string | null;
 
   @Column({ type: 'varchar', nullable: true })
   context: string | null;

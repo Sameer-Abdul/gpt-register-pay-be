@@ -46,6 +46,12 @@ export class Register {
   @Column()
   gender: string;
 
+  @Column({ name: 'phone', nullable: true })
+  phone: string;
+
+  @Column({ name: 'telegram_chat_id', nullable: true })
+  telegramChatId: string;
+
   @Column({ default: 'Award Nomination' })
   course: string;
 

@@ -1,13 +1,20 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
+import { Logger } from '@nestjs/common';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // Enable debug logging
+  const app = await NestFactory.create(AppModule, {
+    logger: ['error', 'warn', 'log', 'debug', 'verbose'],
+  });
 
+  // Get logger instance
+  const logger = new Logger('Bootstrap');
+  
   // ✅ Allow both local and Vercel frontends
   const allowedOrigins = [
     'http://localhost:3000',
-    'https://register-event-scheduler-fe.vercel.app', // your deployed frontend
+    'https://register-event-scheduler-fe.vercel.app',
   ];
 
   app.enableCors({
@@ -15,7 +22,7 @@ async function bootstrap() {
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        console.warn(`❌ Blocked CORS request from: ${origin}`);
+        logger.warn(`❌ Blocked CORS request from: ${origin}`);
         callback(new Error('Not allowed by CORS'));
       }
     },
@@ -23,8 +30,10 @@ async function bootstrap() {
     credentials: true,
   });
 
-  await app.listen(process.env.PORT || 3000);
-  console.log(`✅ Application is running on: ${await app.getUrl()}`);
+  const port = process.env.PORT || 3000;
+  await app.listen(port);
+  logger.log(`✅ Application is running on: ${await app.getUrl()}`);
+  logger.debug('Debug mode is enabled');
 }
 
 bootstrap();

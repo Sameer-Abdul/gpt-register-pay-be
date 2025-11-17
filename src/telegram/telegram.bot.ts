@@ -1,0 +1,60 @@
+import { Telegraf } from 'telegraf';
+import { TelegramService } from './telegram.service';
+
+export class TelegramBot {
+  private bot: Telegraf;
+
+  constructor(token: string, private telegramService: TelegramService) {
+    this.bot = new Telegraf(token);
+    this.setupCommands();
+  }
+
+  private setupCommands() {
+    // Start command
+    this.bot.command('start', async (ctx) => {
+      const message = await this.telegramService.handleStart(ctx.chat.id);
+      await ctx.reply(message, { parse_mode: 'Markdown' });
+    });
+
+    // Handle both /link[phone] and /link [phone] formats
+    this.bot.hears(/^\/link(\d+)$/i, async (ctx) => {
+      const phone = ctx.match[1];
+      await this.handlePhoneLink(ctx, phone);
+    });
+
+    // Legacy /link [phone] format
+    this.bot.command('link', async (ctx) => {
+      const args = ctx.message.text.split(' ').slice(1);
+      if (args.length === 0) {
+        await ctx.reply('❌ Please provide a phone number. Example: /link9876543210', { parse_mode: 'Markdown' });
+        return;
+      }
+      await this.handlePhoneLink(ctx, args[0]);
+    });
+
+    // Error handling
+    this.bot.catch((error) => {
+      console.error('Telegram bot error:', error);
+    });
+  }
+
+  async sendMessage(chatId: string, text: string, options?: any) {
+    await this.bot.telegram.sendMessage(chatId, text, options);
+  }
+
+  private async handlePhoneLink(ctx: any, phone: string) {
+    try {
+      const message = await this.telegramService.handleLinkCommand(ctx.chat.id, phone);
+      await ctx.reply(message, { parse_mode: 'Markdown' });
+    } catch (error) {
+      console.error('Error in handlePhoneLink:', error);
+      await ctx.reply('❌ An error occurred while processing your request. Please try again later.', { parse_mode: 'Markdown' });
+    }
+  }
+
+  launch() {
+    this.bot.launch();
+    process.once('SIGINT', () => this.bot.stop('SIGINT'));
+    process.once('SIGTERM', () => this.bot.stop('SIGTERM'));
+  }
+}

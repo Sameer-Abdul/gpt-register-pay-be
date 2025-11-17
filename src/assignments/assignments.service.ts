@@ -15,9 +15,9 @@ import { Ollama } from 'ollama';
 export interface AssignmentResponse {
   id: number;
   register_id: number;
-  registerState: string | null;
-  registerDistrict: string | null;
-  registerMandal: string | null;
+  state: string | null;
+  district: string | null;
+  mandal: string | null;
   context: string | null;
   rating?: number;
 }
@@ -27,9 +27,9 @@ export interface MeritListItem {
   register_id: number;
   file_name: string;
   rating: number;
-  registerState?: string | null;
-  registerDistrict?: string | null;
-  registerMandal?: string | null;
+  state?: string | null;
+  district?: string | null;
+  mandal?: string | null;
   context?: string | null;
   first_name?: string | null;
   last_name?: string | null;
@@ -109,7 +109,7 @@ export class AssignmentsService {
       where: { id },
       select: [
         'id', 'registerId', 'fileName', 'fileType', 'fileSize',
-        'registerState', 'registerDistrict', 'registerMandal', 'rating', 'createdAt', 'fileData',
+        'state', 'district', 'mandal', 'rating', 'createdAt', 'fileData',
         'submissionDate', 'firstName', 'lastName', 'context'
       ]
     });
@@ -120,9 +120,9 @@ export class AssignmentsService {
 
     const result = { 
       ...assignment,
-      register_state: assignment.registerState,
-      register_district: assignment.registerDistrict,
-      register_mandal: assignment.registerMandal
+      register_state: assignment.state,
+      register_district: assignment.district,
+      register_mandal: assignment.mandal
     } as any;
     
     if (result.fileData) {
@@ -137,10 +137,11 @@ export class AssignmentsService {
       throw new Error('Rating must be between 0 and 10');
     }
 
+    // First get the assignment with all necessary fields
     const assignment = await this.assignmentRepository.findOne({ 
       where: { id },
       select: ['id', 'registerId', 'fileName', 'fileType', 'fileSize', 'rating',
-        'registerState', 'registerDistrict', 'registerMandal', 'createdAt',
+        'state', 'district', 'mandal', 'createdAt',
         'submissionDate', 'firstName', 'lastName', 'context']
     });
     
@@ -148,16 +149,22 @@ export class AssignmentsService {
       return null;
     }
 
+    // Update only the rating
     assignment.rating = rating;
+    
+    // Save the updated assignment
     const updatedAssignment = await this.assignmentRepository.save(assignment);
     
+    // Prepare the response with the correct field names
     const result = { 
       ...updatedAssignment,
-      register_state: updatedAssignment.registerState,
-      register_district: updatedAssignment.registerDistrict,
-      register_mandal: updatedAssignment.registerMandal
+      // Map the fields to match the expected response format
+      register_state: updatedAssignment.state,
+      register_district: updatedAssignment.district,
+      register_mandal: updatedAssignment.mandal
     } as any;
     
+    // Convert file data to base64 if it exists
     if (result.fileData) {
       result.fileData = result.fileData.toString('base64');
     }
@@ -192,9 +199,9 @@ export class AssignmentsService {
           'a.registerId as a_registerId',
           'a.fileName as a_fileName',
           'a.rating as a_rating',
-          'a.registerState as a_registerState',
-          'a.registerDistrict as a_registerDistrict',
-          'a.registerMandal as a_registerMandal',
+          'a.state as a_registerState',
+          'a.district as a_registerDistrict',
+          'a.mandal as a_registerMandal',
           'a.context as a_context',
           'r.first_name as register_first_name',
           'r.last_name as register_last_name',
@@ -434,40 +441,59 @@ export class AssignmentsService {
       assignment.fileType = file.mimetype;
       assignment.context = data.context || null;
       
-      // Explicitly set location data from register with null checks
-      assignment.registerState = register.state || null;
-      assignment.registerDistrict = register.district || null;
-      assignment.registerMandal = register.mandal || null;
+      // Explicitly set location data from register with null checks and trimming
+      // Using the correct property names that match the database columns
+      assignment.state = register.state ? String(register.state).trim() : null;
+      assignment.district = register.district ? String(register.district).trim() : null;
+      assignment.mandal = register.mandal ? String(register.mandal).trim() : null;
       
       // Log the register data for debugging
-      this.logger.log('Register location data:', {
+      this.logger.log('Register source data:', {
+        registerId: register.id,
         state: register.state,
         district: register.district,
-        mandal: register.mandal
+        mandal: register.mandal,
+        firstName: register.firstName,
+        lastName: register.lastName
       });
       
       // Log the assignment data before saving
-      this.logger.log('Assignment location data before save:', {
-        registerState: assignment.registerState,
-        registerDistrict: assignment.registerDistrict,
-        registerMandal: assignment.registerMandal
+      this.logger.log('Assignment data being saved:', {
+        state: assignment.state,
+        district: assignment.district,
+        mandal: assignment.mandal,
+        firstName: assignment.firstName,
+        lastName: assignment.lastName
       });
       
-      // Set user information
-      assignment.firstName = register.firstName || null;
-      assignment.lastName = register.lastName || null;
+      // Set user information from register
+      assignment.firstName = register.firstName ? String(register.firstName).trim() : null;
+      assignment.lastName = register.lastName ? String(register.lastName).trim() : null;
+      
+      // Log the assignment data before saving
+      this.logger.log('Assignment data before save:', {
+        registerId: assignment.registerId,
+        state: assignment.state,
+        district: assignment.district,
+        mandal: assignment.mandal,
+        firstName: assignment.firstName,
+        lastName: assignment.lastName
+      });
       
       // Set timestamps
       const now = new Date();
       assignment.submissionDate = now;
       assignment.createdAt = now;
       
+      // Log the complete assignment object before saving
+      this.logger.log('Complete assignment object before save:', JSON.stringify(assignment, null, 2));
+      
       // Log the assignment data before saving
       this.logger.log('Creating assignment with data:', {
         registerId: assignment.registerId,
-        registerState: assignment.registerState,
-        registerDistrict: assignment.registerDistrict,
-        registerMandal: assignment.registerMandal,
+        state: assignment.state,
+        district: assignment.district,
+        mandal: assignment.mandal,
         firstName: assignment.firstName,
         lastName: assignment.lastName,
         context: assignment.context
@@ -475,28 +501,70 @@ export class AssignmentsService {
 
       this.logger.log('Creating assignment with data:', {
         registerId: assignment.registerId,
-        registerState: assignment.registerState,
-        registerDistrict: assignment.registerDistrict,
-        registerMandal: assignment.registerMandal,
+        state: assignment.state,
+        district: assignment.district,
+        mandal: assignment.mandal,
         context: assignment.context
       });
 
       // 4. Save the assignment within the transaction using repository
-      const savedAssignment = await queryRunner.manager.getRepository(Assignment).save(assignment);
-      this.logger.log('Assignment saved with ID:', savedAssignment.id);
-      
+      // First log the complete assignment object
+      this.logger.log('Complete assignment object before save:', JSON.stringify({
+        registerId: assignment.registerId,
+        fileName: assignment.fileName,
+        fileSize: assignment.fileSize,
+        fileType: assignment.fileType,
+        context: assignment.context,
+        state: assignment.state,
+        district: assignment.district,
+        mandal: assignment.mandal,
+        firstName: assignment.firstName,
+        lastName: assignment.lastName,
+        submissionDate: assignment.submissionDate,
+        createdAt: assignment.createdAt
+      }, null, 2));
+
+      // Save using repository.save() for better type safety
+      const savedAssignment = await queryRunner.manager
+        .getRepository(Assignment)
+        .save(assignment);
+        
       // Log the saved assignment data
       this.logger.log('Saved assignment data:', {
         id: savedAssignment.id,
-        registerState: savedAssignment.registerState,
-        registerDistrict: savedAssignment.registerDistrict,
-        registerMandal: savedAssignment.registerMandal,
+        registerId: savedAssignment.registerId,
+        state: savedAssignment.state,
+        district: savedAssignment.district,
+        mandal: savedAssignment.mandal,
+        firstName: savedAssignment.firstName,
+        lastName: savedAssignment.lastName
+      });
+      this.logger.log('Assignment saved with ID:', savedAssignment.id);
+      
+      // Log the saved assignment data
+      this.logger.log('Saved assignment data (from save result):', {
+        id: savedAssignment.id,
+        state: savedAssignment.state,
+        district: savedAssignment.district,
+        mandal: savedAssignment.mandal,
         registerId: savedAssignment.registerId
       });
       
-      // 5. Verify the saved data
+      // 5. Verify the saved data with explicit column selection
       const verifiedAssignment = await queryRunner.manager
         .createQueryBuilder(Assignment, 'assignment')
+        .select([
+          'assignment.id',
+          'assignment.registerId',
+          'assignment.registerState',
+          'assignment.registerDistrict',
+          'assignment.registerMandal',
+          'assignment.fileName',
+          'assignment.rating',
+          'assignment.context',
+          'assignment.firstName',
+          'assignment.lastName'
+        ])
         .where('assignment.id = :id', { id: savedAssignment.id })
         .getOne();
 
@@ -511,17 +579,22 @@ export class AssignmentsService {
       // 7. Log the final verified data
       this.logger.log('Verified assignment data from database:', {
         id: verifiedAssignment.id,
-        registerState: verifiedAssignment.registerState,
-        registerDistrict: verifiedAssignment.registerDistrict,
-        registerMandal: verifiedAssignment.registerMandal,
-        registerId: verifiedAssignment.registerId
+        state: verifiedAssignment.state,
+        district: verifiedAssignment.district,
+        mandal: verifiedAssignment.mandal,
+        registerId: verifiedAssignment.registerId,
+        fileName: verifiedAssignment.fileName,
+        rating: verifiedAssignment.rating,
+        context: verifiedAssignment.context,
+        firstName: verifiedAssignment.firstName,
+        lastName: verifiedAssignment.lastName
       });
 
       this.logger.log('Verified assignment data:', {
         id: verifiedAssignment.id,
-        registerState: verifiedAssignment.registerState,
-        registerDistrict: verifiedAssignment.registerDistrict,
-        registerMandal: verifiedAssignment.registerMandal,
+        state: verifiedAssignment.state,
+        district: verifiedAssignment.district,
+        mandal: verifiedAssignment.mandal,
         registerId: verifiedAssignment.registerId
       });
 
@@ -537,17 +610,26 @@ export class AssignmentsService {
         assignment: {
           id: savedAssignment.id,
           register_id: savedAssignment.registerId,
-          registerState: savedAssignment.registerState,
-          registerDistrict: savedAssignment.registerDistrict,
-          registerMandal: savedAssignment.registerMandal,
+          state: savedAssignment.state,
+          district: savedAssignment.district,
+          mandal: savedAssignment.mandal,
           context: savedAssignment.context,
           rating: savedAssignment.rating,
+          fileName: savedAssignment.fileName,
+          fileType: savedAssignment.fileType,
+          fileSize: savedAssignment.fileSize,
+          firstName: savedAssignment.firstName,
+          lastName: savedAssignment.lastName,
+          submissionDate: savedAssignment.submissionDate,
           // For backward compatibility
-          state: savedAssignment.registerState,
-          district: savedAssignment.registerDistrict,
-          mandal: savedAssignment.registerMandal
+          register_state: savedAssignment.state,
+          register_district: savedAssignment.district,
+          register_mandal: savedAssignment.mandal
         }
       };
+      
+      // Log the final response being sent back
+      this.logger.log('Final API response with assignment data:', JSON.stringify(response, null, 2));
       
       this.logger.log('Returning response:', response);
       return response;
@@ -619,9 +701,9 @@ export class AssignmentsService {
           'id', 
           'fileData', 
           'registerId', 
-          'registerState', 
-          'registerDistrict', 
-          'registerMandal', 
+          'state', 
+          'district', 
+          'mandal', 
           'rating',
           'firstName',
           'lastName',
@@ -662,9 +744,9 @@ export class AssignmentsService {
 
       // 4️⃣ Generate prompt and get response
       const locationInfo = [
-        assignment.registerState ? `State: ${assignment.registerState}` : '',
-        assignment.registerDistrict ? `District: ${assignment.registerDistrict}` : '',
-        assignment.registerMandal ? `Mandal: ${assignment.registerMandal}` : ''
+        assignment.state ? `State: ${assignment.state}` : '',
+        assignment.district ? `District: ${assignment.district}` : '',
+        assignment.mandal ? `Mandal: ${assignment.mandal}` : ''
       ].filter(Boolean).join(', ');
 
       const prompt = `Analyze the following assignment and provide a rating from 1-10 based on relevance to the context:
