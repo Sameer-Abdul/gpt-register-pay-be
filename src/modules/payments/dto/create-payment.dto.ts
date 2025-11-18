@@ -1,12 +1,13 @@
 // src/modules/payments/dto/create-payment.dto.ts
 import { IsString, IsNotEmpty, IsOptional, IsNumber, IsInt } from 'class-validator';
 
-export class FileMetadata {
+export interface FileMetadata {
   originalname: string;
   filename: string;
   path: string;
   mimetype: string;
   size: number;
+  buffer?: Buffer;
 }
 
 export class CreatePaymentDto {

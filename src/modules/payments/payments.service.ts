@@ -88,20 +88,36 @@ export class PaymentsService {
       // Save the payment
       const savedPayment = await queryRunner.manager.save(Payment, payment);
         
-      // Read the file content if it exists
-      let fileContent: Buffer | null = null;
-      if (paymentScreenshot?.path) {
-        fileContent = await fs.promises.readFile(paymentScreenshot.path);
-      }
-      
       // Update the register with payment reference and UTR
       register.paymentId = savedPayment.id;
       register.utrNumber = savedPayment.utrNumber;
       
-      // Only update screenshot if we have content
-      if (fileContent) {
-        register.paymentScreenshot = fileContent;
-        register.screenshotMimeType = savedPayment.screenshotMimeType;
+      // Handle the file data
+      if (paymentScreenshot) {
+        // If we have a file buffer in the DTO, use that
+        if ('buffer' in paymentScreenshot && paymentScreenshot.buffer) {
+          register.paymentScreenshot = paymentScreenshot.buffer;
+        } 
+        // Otherwise try to read from path
+        else if (paymentScreenshot.path) {
+          try {
+            register.paymentScreenshot = await fs.promises.readFile(paymentScreenshot.path);
+          } catch (error) {
+            console.error('Error reading payment screenshot:', error);
+            // Continue even if file read fails, as we still want to save other payment info
+          }
+        }
+        
+        // Update MIME type if available
+        if (paymentScreenshot.mimetype) {
+          register.screenshotMimeType = paymentScreenshot.mimetype;
+        }
+        
+        // Also store the file path if available
+        if (paymentScreenshot.path) {
+          // Use bracket notation to avoid TypeScript errors with dynamic properties
+          (register as any).payment_screenshot_path = paymentScreenshot.path;
+        }
       }
       
       // Save the updated register
