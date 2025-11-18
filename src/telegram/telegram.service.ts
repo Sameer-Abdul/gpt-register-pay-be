@@ -137,11 +137,27 @@ export class TelegramService implements OnModuleInit {
   }
 
   private normalizePhoneNumber(phoneNumber: string): string {
-    if (!phoneNumber) return '';
-    
-    // Remove all non-digit characters and leading zeros
-    return phoneNumber.replace(/\D/g, '').replace(/^0+/, '');
+  if (!phoneNumber) return '';
+  
+  // Remove all non-digit characters
+  let cleanNumber = phoneNumber.replace(/\D/g, '');
+  
+  // Remove leading zeros
+  cleanNumber = cleanNumber.replace(/^0+/, '');
+  
+  // Ensure the number is exactly 10 digits (Indian mobile numbers)
+  if (cleanNumber.length === 10) {
+    return cleanNumber;
   }
+  
+  // If number is longer than 10 digits, take last 10 digits
+  if (cleanNumber.length > 10) {
+    return cleanNumber.slice(-10);
+  }
+  
+  // If number is less than 10 digits, it's invalid
+  return '';
+}
 
   async sendEventNotification(phoneNumber: string, message: string): Promise<boolean> {
     const logger = new Logger('TelegramService');
@@ -149,106 +165,66 @@ export class TelegramService implements OnModuleInit {
     logger.debug(`📱 Input phone number: '${phoneNumber}'`);
     
     if (!phoneNumber) {
-      logger.error('❌ No phone number provided for notification');
-      return false;
+        logger.error('❌ No phone number provided for notification');
+        return false;
     }
 
     // Normalize the phone number
     const cleanPhone = this.normalizePhoneNumber(phoneNumber);
     logger.debug(`🔄 Normalized phone number: '${cleanPhone}'`);
     
+    if (!cleanPhone) {
+        logger.error(`❌ Invalid phone number format: ${phoneNumber}`);
+        return false;
+    }
+
     if (!this.bot) {
-      const errorMsg = '❌ Bot is not initialized. Check if TELEGRAM_BOT_TOKEN is set correctly.';
-      logger.error(errorMsg);
-      return false;
+        const errorMsg = '❌ Bot is not initialized. Check if TELEGRAM_BOT_TOKEN is set correctly.';
+        logger.error(errorMsg);
+        return false;
     }
     
     try {
-      // Log all available phone numbers for debugging
-      logger.debug('🔍 Querying database for linked phone numbers...');
-      const allLinks = await this.telegramLinkRepository.find();
-      
-      logger.debug(`📋 Found ${allLinks.length} linked phone numbers in database:`);
-      allLinks.forEach((link, index) => {
-        logger.debug(`${index + 1}. ${link.phoneNumber} (chat ID: ${link.chatId})`);
-      });
-
-      // Try to find the Telegram link with the exact phone number match first
-      logger.debug(`🔍 Searching for exact match for: ${cleanPhone}`);
-      let telegramLink = await this.telegramLinkRepository.findOne({
-        where: { phoneNumber: cleanPhone }
-      });
-
-      // If no exact match, try with different phone number formats
-      if (!telegramLink) {
-        logger.debug('🔍 No exact match found, trying alternative formats...');
+        // Get all links for debugging
+        const allLinks = await this.telegramLinkRepository.find();
+        logger.debug(`📋 Found ${allLinks.length} linked phone numbers in database`);
         
-        // Try with 91 prefix if it's not there
-        let alternativeNumber = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`;
-        logger.debug(`🔄 Trying with 91 prefix: ${alternativeNumber}`);
-        telegramLink = await this.telegramLinkRepository.findOne({
-          where: { phoneNumber: alternativeNumber }
+        // Try to find the Telegram link with normalized phone number
+        logger.debug(`🔍 Searching for: ${cleanPhone}`);
+        let telegramLink = await this.telegramLinkRepository.findOne({
+            where: { phoneNumber: cleanPhone }
         });
 
-        // Try without 91 prefix if it's there
-        if (!telegramLink && cleanPhone.startsWith('91')) {
-          alternativeNumber = cleanPhone.substring(2);
-          logger.debug(`🔄 Trying without 91 prefix: ${alternativeNumber}`);
-          telegramLink = await this.telegramLinkRepository.findOne({
-            where: { phoneNumber: alternativeNumber }
-          });
+        // If not found, try to find by last 10 digits
+        if (!telegramLink) {
+            logger.debug('🔍 No exact match, trying to find by last 10 digits...');
+            const lastTenDigits = cleanPhone.slice(-10);
+            telegramLink = await this.telegramLinkRepository
+                .createQueryBuilder('link')
+                .where('RIGHT(link.phoneNumber, 10) = :lastTen', { lastTen: lastTenDigits })
+                .getOne();
         }
-      }
 
-      if (!telegramLink) {
-        const errorMsg = `❌ No Telegram link found for phone number: ${cleanPhone}`;
-        logger.error(errorMsg);
-        logger.error('📋 Available numbers in database: ' + allLinks.map(l => l.phoneNumber).join(', '));
-        return false;
-      }
+        if (!telegramLink) {
+            logger.error(`❌ No Telegram link found for phone number: ${cleanPhone}`);
+            logger.debug('Available numbers: ' + allLinks.map(l => l.phoneNumber).join(', '));
+            return false;
+        }
 
-      // Send the message
-      logger.debug(`📤 Sending message to chat ID: ${telegramLink.chatId}`);
-      logger.verbose(`💬 Message preview: ${message.substring(0, 50)}...`);
-      
-      try {
+        // Send the message
+        logger.debug(`📤 Sending to chat ID: ${telegramLink.chatId}`);
         await this.bot.sendMessage(telegramLink.chatId.toString(), message, { 
-          parse_mode: 'Markdown' 
+            parse_mode: 'Markdown' 
         });
         
-        logger.log(`✅ Successfully sent notification to ${telegramLink.phoneNumber} (Chat ID: ${telegramLink.chatId})`);
+        logger.log(`✅ Sent to ${telegramLink.phoneNumber} (Chat ID: ${telegramLink.chatId})`);
         return true;
-      } catch (sendError) {
-        logger.error(`❌ Failed to send message to chat ID ${telegramLink.chatId}:`, {
-          error: sendError.message,
-          stack: sendError.stack,
-          chatId: telegramLink.chatId,
-          phoneNumber: telegramLink.phoneNumber
-        });
-        return false;
-      }
+
     } catch (error) {
-      const errorDetails = {
-        error: error.message,
-        stack: error.stack,
-        phoneNumber: cleanPhone,
-        timestamp: new Date().toISOString()
-      };
-      logger.error('❌ Error sending Telegram notification', errorDetails);
-      
-      // Log more details for common errors
-      if (error.response) {
-        logger.error('📡 Telegram API Error:', {
-          statusCode: error.response.statusCode,
-          description: error.response.description,
-          errorCode: error.response.error_code,
-          parameters: error.response.parameters
-        });
-      }
-      
-      return false;
+        logger.error(`❌ Error in sendEventNotification: ${error.message}`, error.stack);
+        return false;
     } finally {
-      logger.debug('🏁 ===== END: sendEventNotification =====');
+        logger.debug('🏁 ===== END: sendEventNotification =====');
     }
-  }
+}
 }
