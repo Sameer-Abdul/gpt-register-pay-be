@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, OneToMany } from 'typeorm';
 import { Register } from '../../register/entities/register.entity';
 
 @Entity('locations')
@@ -20,12 +20,6 @@ export class Location {
     onDelete: 'SET NULL'
   })
   registers: Register[];
-
-  @CreateDateColumn({ name: 'created_at' })
-  createdAt: Date;
-
-  @UpdateDateColumn({ name: 'updated_at' })
-  updatedAt: Date;
 
   constructor(partial?: Partial<Location>) {
     Object.assign(this, partial);
