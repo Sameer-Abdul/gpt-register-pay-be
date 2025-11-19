@@ -63,25 +63,29 @@ export class AssignmentsController {
     const fullPath = path.join(process.cwd(), basePath);
 
     const buildTree = async (dir: string): Promise<any[]> => {
-      try {
-        const items = await fs.readdir(dir, { withFileTypes: true });
-        const result: any[] = [];
-        for (const item of items) {
-          const full = path.join(dir, item.name);
-          if (item.isDirectory()) {
-            result.push({ folder: item.name, children: await buildTree(full) });
-          } else {
-            result.push({ file: item.name });
-          }
+      const items = await fs.readdir(dir, { withFileTypes: true });
+      const result: any[] = [];
+      for (const item of items) {
+        const full = path.join(dir, item.name);
+        if (item.isDirectory()) {
+          result.push({ folder: item.name, children: await buildTree(full) });
+        } else {
+          result.push({ file: item.name });
         }
-        return result;
-      } catch (e) {
-        // If directory does not exist yet, return empty list
-        return [];
       }
+      return result;
     };
 
-    return buildTree(fullPath);
+    try {
+      const stat = await fs.stat(fullPath).catch(() => null);
+      if (!stat || !stat.isDirectory()) {
+        return { basePath, fullPath, exists: false, tree: [] };
+      }
+      const tree = await buildTree(fullPath);
+      return { basePath, fullPath, exists: true, tree };
+    } catch (e: any) {
+      return { basePath, fullPath, exists: false, tree: [], error: e?.message || String(e) };
+    }
   }
 
   @Get('merit-list')
