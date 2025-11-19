@@ -72,9 +72,7 @@ export class EventsService {
       console.log('\n👥 STEP 2: NOTIFYING REGISTERED USERS');
       console.log('-' .repeat(40));
       
-      const users = await this.registerRepository.find({
-        where: { isActive: true }
-      });
+      const users = await this.registerRepository.find();
       
       console.log(`🔍 Found ${users.length} active users to notify`);
       
