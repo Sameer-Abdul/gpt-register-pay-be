@@ -60,7 +60,7 @@ export class AssignmentsController {
   @Get('tree')
   async getAssignmentTree() {
     const basePath = this.configService.get<string>('ASSIGNMENT_BASE_PATH') || 'assignments';
-    const fullPath = path.join(process.cwd(), basePath);
+    const fullPath = path.isAbsolute(basePath) ? basePath : path.join(process.cwd(), basePath);
 
     const buildTree = async (dir: string): Promise<any[]> => {
       const items = await fs.readdir(dir, { withFileTypes: true });

@@ -25,7 +25,7 @@ export class LocalAssignmentStorageService implements AssignmentStorage {
     const district = sanitizeSegment(`${options.location.district}_District`);
     const school = sanitizeSegment(options.location.schoolName || 'School');
 
-    const baseDir = path.resolve(basePath);
+    const baseDir = path.isAbsolute(basePath) ? basePath : path.resolve(basePath);
     const targetDir = path.join(baseDir, state, mandal, district, school);
 
     console.log('[Storage] Base dir:', baseDir);
