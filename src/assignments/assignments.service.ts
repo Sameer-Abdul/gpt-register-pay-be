@@ -1,5 +1,5 @@
 import * as multer from 'multer';
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, Inject } from '@nestjs/common';
 import { MulterFile } from '../common/types';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Connection, Not, IsNull, getConnection } from 'typeorm';
@@ -10,6 +10,7 @@ import * as path from 'path';
 import * as os from 'os';
 // Using dynamic import for pdf-parse to handle ESM
 import { Ollama } from 'ollama';
+import type { AssignmentStorage } from './storage/assignment-storage.interface';
 
 // Define response interfaces
 export interface AssignmentResponse {
@@ -45,7 +46,6 @@ export interface GroupedByDistrict {
   district: string;
   records: MeritListItem[];
 }
-
 export interface GroupedByMandal {
   mandal: string;
   records: MeritListItem[];
@@ -68,6 +68,7 @@ export class AssignmentsService {
     @InjectRepository(Register)
     private readonly registerRepository: Repository<Register>,
     private readonly connection: Connection,
+    @Inject('AssignmentStorage') private readonly storage: AssignmentStorage,
   ) {}
 
   private async extractTextFromPdf(buffer: Buffer): Promise<string> {
@@ -80,6 +81,47 @@ export class AssignmentsService {
       this.logger.error('Text extraction failed:', error);
       return '';
     }
+  }
+
+  // Upload an assignment file using pluggable storage and update DB with relative path
+  async uploadAssignmentFile(
+    assignmentId: number,
+    file: MulterFile
+  ): Promise<{ assignmentId: number; relativePath: string }> {
+    if (!file || !file.buffer) {
+      throw new Error('No file buffer provided');
+    }
+
+    const assignment = await this.assignmentRepository.findOne({ where: { id: assignmentId } });
+    if (!assignment) {
+      throw new NotFoundException(`Assignment with ID ${assignmentId} not found`);
+    }
+
+    const register = await this.registerRepository.findOne({ where: { id: assignment.registerId } });
+    if (!register) {
+      throw new NotFoundException(`Register with ID ${assignment.registerId} not found`);
+    }
+
+    const location = {
+      state: String(register.state || 'Unknown'),
+      mandal: String(register.mandal || 'Unknown'),
+      district: String(register.district || 'Unknown'),
+      schoolName: String(register.schoolCorrespondentName || 'School'),
+    };
+
+    const relativePath = await this.storage.saveAssignment({
+      buffer: file.buffer,
+      originalName: file.originalname,
+      location,
+    });
+
+    assignment.fileName = relativePath;
+    assignment.fileType = file.mimetype;
+    assignment.fileSize = file.size;
+    assignment.fileData = null as any;
+    await this.assignmentRepository.save(assignment);
+
+    return { assignmentId, relativePath };
   }
 
   // Debug method to check register data

@@ -1,4 +1,8 @@
 import { Controller, Post, Get, UploadedFile, UseInterceptors, Body, Param, InternalServerErrorException, Put } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import * as path from 'path';
+import { promises as fs } from 'fs';
+import * as multer from 'multer';
 import type { MulterFile } from '../common/types';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { 
@@ -12,7 +16,10 @@ import {
 
 @Controller('assignments')
 export class AssignmentsController {
-  constructor(private readonly assignmentsService: AssignmentsService) {}
+  constructor(
+    private readonly assignmentsService: AssignmentsService,
+    private readonly configService: ConfigService,
+  ) {}
 
   @Post()
   @UseInterceptors(FileInterceptor('file'))
@@ -23,12 +30,58 @@ export class AssignmentsController {
     return this.assignmentsService.createAssignment(body, file);
   }
 
+  // New: Upload file to configurable storage path with hierarchical folders
+  @Post(':id/upload')
+  @UseInterceptors(FileInterceptor('file', { storage: multer.memoryStorage() }))
+  async uploadAssignmentFile(
+    @Param('id') id: string,
+    @UploadedFile() file: MulterFile
+  ) {
+    const assignmentId = Number(id);
+    if (!assignmentId || Number.isNaN(assignmentId)) {
+      throw new InternalServerErrorException('Invalid assignment id');
+    }
+    const result = await this.assignmentsService.uploadAssignmentFile(assignmentId, file);
+    return {
+      success: true,
+      data: result,
+    };
+  }
+
   @Post(':id/analyze')
   async analyzeAssignment(
     @Param('id') id: number,
     @Body('context') context: string,
   ) {
     return this.assignmentsService.analyzeAssignmentWithAI(Number(id), context);
+  }
+
+  // List the assignment storage folder tree for verification on Render
+  @Get('tree')
+  async getAssignmentTree() {
+    const basePath = this.configService.get<string>('ASSIGNMENT_BASE_PATH') || 'assignments';
+    const fullPath = path.join(process.cwd(), basePath);
+
+    const buildTree = async (dir: string): Promise<any[]> => {
+      try {
+        const items = await fs.readdir(dir, { withFileTypes: true });
+        const result: any[] = [];
+        for (const item of items) {
+          const full = path.join(dir, item.name);
+          if (item.isDirectory()) {
+            result.push({ folder: item.name, children: await buildTree(full) });
+          } else {
+            result.push({ file: item.name });
+          }
+        }
+        return result;
+      } catch (e) {
+        // If directory does not exist yet, return empty list
+        return [];
+      }
+    };
+
+    return buildTree(fullPath);
   }
 
   @Get('merit-list')
