@@ -12,9 +12,6 @@ export class Register {
   @Column({ name: 'first_name' })
   firstName: string;
 
-  @Column({ name: 'is_active', default: true })
-  isActive: boolean;
-
   @OneToMany(() => Assignment, assignment => assignment.register)
   assignments: Assignment[];
 

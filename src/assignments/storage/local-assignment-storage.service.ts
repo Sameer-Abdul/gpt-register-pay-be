@@ -28,6 +28,9 @@ export class LocalAssignmentStorageService implements AssignmentStorage {
     const baseDir = path.resolve(basePath);
     const targetDir = path.join(baseDir, state, mandal, district, school);
 
+    console.log('[Storage] Base dir:', baseDir);
+    console.log('[Storage] Target dir:', targetDir);
+
     await fs.mkdir(targetDir, { recursive: true });
 
     const ext = path.extname(options.originalName || '') || '';
@@ -37,6 +40,8 @@ export class LocalAssignmentStorageService implements AssignmentStorage {
 
     const fullPath = path.join(targetDir, safeFileName);
     await fs.writeFile(fullPath, options.buffer);
+
+    console.log('[Storage] Saved file:', fullPath);
 
     // Return POSIX-style relative path
     const rel = path.relative(baseDir, fullPath).split(path.sep).join('/');
