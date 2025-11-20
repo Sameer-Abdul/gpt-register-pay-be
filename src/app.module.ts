@@ -15,6 +15,7 @@ import { Register } from './register/entities/register.entity';
 import { Payment } from './modules/payments/entities/payment.entity';
 import { TelegramLink } from './telegram/entities/telegram-link.entity';
 import { EventsModule } from './events/events.module';
+import { TenantsModule } from './tenants/tenants.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { EventsModule } from './events/events.module';
     AssignmentsModule,
     TelegramModule,
     EventsModule,
+    TenantsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
