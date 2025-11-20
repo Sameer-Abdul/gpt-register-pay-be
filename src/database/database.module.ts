@@ -8,6 +8,7 @@ import { Assignment } from '../assignments/entities/assignment.entity';
 import { Location } from '../locations/entities/location.entity';
 import { TelegramLink } from '../telegram/entities/telegram-link.entity';
 import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
+import { Tenant } from '../tenants/tenant.entity';
 import * as path from 'path';
 
 @Module({
@@ -28,7 +29,7 @@ import * as path from 'path';
           username: configService.get('DB_USERNAME') || 'postgres',
           password: configService.get('DB_PASSWORD') || '7799179121',
           database: configService.get('DB_NAME') || 'register_payment',
-          entities: [Register, Payment, Assignment, Location, TelegramLink],
+          entities: [Register, Payment, Assignment, Location, TelegramLink, Tenant],
           migrations: [path.join(__dirname, '../../migrations/*.ts')],
           migrationsRun: true, // Run migrations on startup
           synchronize: false, // Keep this as false when using migrations
