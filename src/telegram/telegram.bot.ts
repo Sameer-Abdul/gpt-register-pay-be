@@ -53,18 +53,29 @@ export class TelegramBot {
   }
 
   async launch() {
-    try {
-      // Verify bot token is valid and API is reachable
-      await this.bot.telegram.getMe();
-      console.log('🤖 Telegram bot connected successfully');
-      
-      // Start the bot
-      this.bot.launch();
-      process.once('SIGINT', () => this.bot.stop('SIGINT'));
-      process.once('SIGTERM', () => this.bot.stop('SIGTERM'));
-    } catch (error) {
-      console.warn('⚠️ Telegram bot could not connect to the API. Bot will not be available.');
-      console.debug('Telegram API error:', error.message);
+  try {
+    // Retry 3 times (Render cold start fix)
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const res = await this.bot.telegram.getMe();
+        console.log("🤖 Telegram bot connected successfully", res);
+        break;
+      } catch (err) {
+        console.warn(`⚠️ Telegram API attempt ${attempt} failed:`, err.message);
+        if (attempt === 3) throw err;
+        await new Promise(res => setTimeout(res, 3000));
+      }
     }
+
+    // Start the bot
+    this.bot.launch();
+    process.once('SIGINT', () => this.bot.stop('SIGINT'));
+    process.once('SIGTERM', () => this.bot.stop('SIGTERM'));
+
+  } catch (error) {
+    console.warn('⚠️ Telegram bot could not connect to the API. Bot will not be available.');
+    console.debug('Telegram API error:', error.message);
   }
+}
+
 }

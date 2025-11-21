@@ -759,45 +759,72 @@ export class AssignmentsService {
 
   async analyzeAssignmentWithAI(id: number, context: string = "") {
     try {
-      // Load fields manually so TypeORM does not skip BYTEA
+      // Fetch assignment with required fields
       const assignment = await this.assignmentRepository.findOne({
         where: { id },
-        select: ["id", "fileData", "file_path", "manual_rating", "ai_rating", "final_rating"]
+        select: [
+          "id",
+          "fileData",
+          "file_path",
+          "fileType",
+          "manual_rating",
+          "ai_rating",
+          "final_rating",
+        ],
       });
 
       if (!assignment) {
         throw new Error("Assignment not found");
       }
 
-      let buffer: Buffer | null = assignment.fileData;
+      let buffer: Buffer | null = null;
 
-      // Fallback to file_path
-      if (!buffer && assignment.file_path) {
+      // ------------------------------
+      // 1) Get file buffer (DB first, then file system)
+      // ------------------------------
+      if (assignment.fileData) {
+        buffer = assignment.fileData;
+      } else if (assignment.file_path) {
         buffer = await this.storage.getFile(assignment.file_path);
+        if (!buffer) {
+          throw new Error("File not found on disk. Please re-upload the file.");
+        }
+      } else {
+        throw new Error("Assignment has no stored file. Please re-upload the file.");
       }
 
-      // No file available
-      if (!buffer) {
-        throw new Error("Assignment has no stored file data. Please re-upload the file.");
+      if (!buffer || buffer.length === 0) {
+        throw new Error("Stored file is empty or unreadable.");
       }
 
-      // Extract actual text from PDF
-      let text = "";
-      try {
-        // Use require for better compatibility with CommonJS modules
-        const pdfParse = require('pdf-parse');
-        const parsed = await pdfParse(buffer);
-        text = parsed.text?.trim() || "";
-      } catch (pdfErr) {
-        throw new Error("Failed to extract text from file. Not a valid PDF or corrupted file.");
+      // ------------------------------
+      // 2) Extract text (PDF or plain text)
+      // ------------------------------
+      let extractedText = "";
+
+      // If PDF
+      if (assignment.fileType?.includes("pdf")) {
+        try {
+          const pdfParse = require("pdf-parse");
+          const pdfData = await pdfParse(buffer);
+          extractedText = pdfData.text?.trim() || "";
+        } catch (err) {
+          throw new Error("Failed to extract text from PDF. File may be corrupted.");
+        }
+      }
+      // If normal text file
+      else {
+        extractedText = buffer.toString("utf8").trim();
       }
 
-      if (!text || text.length < 20) {
-        throw new Error("Extracted PDF text is too short for analysis.");
+      if (!extractedText || extractedText.length < 10) {
+        throw new Error("Extracted text is too short. File may be corrupted.");
       }
 
-      // Call Groq API
-      const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      // ------------------------------
+      // 3) Call Groq AI to get rating
+      // ------------------------------
+      const aiRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
@@ -805,44 +832,40 @@ export class AssignmentsService {
         },
         body: JSON.stringify({
           model: "llama3-8b-8192",
-          temperature: 0.1,
           messages: [
-            { role: "system", content: "Return ONLY a number rating between 0 and 10." },
-            { role: "user", content: `Rate this assignment:\n${text}` }
-          ]
+            { role: "system", content: "You must respond with ONLY a number between 0 and 10. No text." },
+            { role: "user", content: extractedText }
+          ],
+          temperature: 0.1,
         }),
       });
 
-      if (!groqRes.ok) {
-        const errorData = await groqRes.json().catch(() => ({}));
-        throw new Error(`AI API error: ${groqRes.status} - ${JSON.stringify(errorData)}`);
+      const aiJson = await aiRes.json();
+      const raw = aiJson?.choices?.[0]?.message?.content?.trim();
+      const rating = Number(raw);
+
+      if (isNaN(rating) || rating < 0 || rating > 10) {
+        throw new Error("Invalid rating returned by AI.");
       }
 
-      const ai = await groqRes.json();
-      const raw = ai?.choices?.[0]?.message?.content?.trim() || "";
-
-      // Extract number only
-      const ratingNumber = Number(raw.replace(/[^0-9.]/g, ""));
-
-      if (isNaN(ratingNumber) || ratingNumber < 0 || ratingNumber > 10) {
-        throw new Error("Invalid rating from AI");
-      }
-
-      assignment.ai_rating = ratingNumber;
-      assignment.final_rating = assignment.manual_rating ?? ratingNumber;
+      // ------------------------------
+      // 4) Save AI rating and update final rating
+      // ------------------------------
+      assignment.ai_rating = rating;
+      assignment.final_rating = assignment.manual_rating ?? rating;
 
       await this.assignmentRepository.save(assignment);
 
       return {
         success: true,
-        ai_rating: ratingNumber,
+        ai_rating: rating,
         final_rating: assignment.final_rating,
       };
 
     } catch (err) {
       throw new InternalServerErrorException({
         message: "AI analysis failed",
-        error: err.message
+        error: err.message,
       });
     }
   }
