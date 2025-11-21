@@ -1,5 +1,7 @@
 import * as multer from 'multer';
 import { Injectable, Logger, NotFoundException, Inject, InternalServerErrorException } from '@nestjs/common';
+// Using dynamic import for pdf-parse to handle TypeScript issues
+const pdfParse = require('pdf-parse');
 import { MulterFile } from '../common/types';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Connection, Not, IsNull, getConnection } from 'typeorm';
@@ -757,44 +759,44 @@ export class AssignmentsService {
 
   async analyzeAssignmentWithAI(id: number, context: string = "") {
     try {
+      // Load fields manually so TypeORM does not skip BYTEA
       const assignment = await this.assignmentRepository.findOne({
         where: { id },
-        select: [
-          "id",
-          "fileData",
-          "file_path",
-          "manual_rating",
-          "ai_rating",
-          "final_rating"
-        ]
+        select: ["id", "fileData", "file_path", "manual_rating", "ai_rating", "final_rating"]
       });
 
       if (!assignment) {
         throw new Error("Assignment not found");
       }
 
-      let fileContent: Buffer | null = null;
-      let text = '';
+      let buffer: Buffer | null = assignment.fileData;
 
-      // First try to get file content from file_path (preferred method)
-      if (assignment.file_path) {
-        fileContent = await this.storage.getFile(assignment.file_path);
-        if (!fileContent) {
-          throw new Error("File not found in storage at path: " + assignment.file_path);
-        }
-        text = fileContent.toString('utf8');
-      } 
-      // Fallback to fileData for backward compatibility (should be rare)
-      else if (assignment.fileData) {
-        this.logger.warn(`Using fileData for assignment ${id} - consider migrating to file_path`);
-        fileContent = assignment.fileData;
-        text = fileContent.toString('utf8');
-      } 
-      // If neither is available, throw an error
-      else {
+      // Fallback to file_path
+      if (!buffer && assignment.file_path) {
+        buffer = await this.storage.getFile(assignment.file_path);
+      }
+
+      // No file available
+      if (!buffer) {
         throw new Error("Assignment has no stored file data. Please re-upload the file.");
       }
 
+      // Extract actual text from PDF
+      let text = "";
+      try {
+        // Use require for better compatibility with CommonJS modules
+        const pdfParse = require('pdf-parse');
+        const parsed = await pdfParse(buffer);
+        text = parsed.text?.trim() || "";
+      } catch (pdfErr) {
+        throw new Error("Failed to extract text from file. Not a valid PDF or corrupted file.");
+      }
+
+      if (!text || text.length < 20) {
+        throw new Error("Extracted PDF text is too short for analysis.");
+      }
+
+      // Call Groq API
       const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -803,31 +805,38 @@ export class AssignmentsService {
         },
         body: JSON.stringify({
           model: "llama3-8b-8192",
+          temperature: 0.1,
           messages: [
-            { role: "system", content: "Return ONLY a rating 0-10." },
-            { role: "user", content: text }
-          ],
-          temperature: 0.1
+            { role: "system", content: "Return ONLY a number rating between 0 and 10." },
+            { role: "user", content: `Rate this assignment:\n${text}` }
+          ]
         }),
       });
 
-      const ai = await groqRes.json();
-      const raw = ai?.choices?.[0]?.message?.content?.trim();
+      if (!groqRes.ok) {
+        const errorData = await groqRes.json().catch(() => ({}));
+        throw new Error(`AI API error: ${groqRes.status} - ${JSON.stringify(errorData)}`);
+      }
 
-      const rating = Number(raw);
-      if (isNaN(rating)) {
+      const ai = await groqRes.json();
+      const raw = ai?.choices?.[0]?.message?.content?.trim() || "";
+
+      // Extract number only
+      const ratingNumber = Number(raw.replace(/[^0-9.]/g, ""));
+
+      if (isNaN(ratingNumber) || ratingNumber < 0 || ratingNumber > 10) {
         throw new Error("Invalid rating from AI");
       }
 
-      assignment.ai_rating = rating;
-      assignment.final_rating = assignment.manual_rating ?? rating;
+      assignment.ai_rating = ratingNumber;
+      assignment.final_rating = assignment.manual_rating ?? ratingNumber;
 
       await this.assignmentRepository.save(assignment);
 
       return {
         success: true,
-        ai_rating: rating,
-        final_rating: assignment.final_rating
+        ai_rating: ratingNumber,
+        final_rating: assignment.final_rating,
       };
 
     } catch (err) {
