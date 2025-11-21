@@ -25,14 +25,14 @@ export class Assignment {
   @Column({ name: 'file_type' })
   fileType: string;
 
+  @Column({ name: 'file_path', type: 'varchar', length: 500, nullable: true })
+  file_path: string | null;
+
   @Column({ name: 'submission_date', type: 'timestamp with time zone', default: () => 'CURRENT_TIMESTAMP' })
   submissionDate: Date;
 
   @Column({ name: 'created_at', type: 'timestamp with time zone', default: () => 'CURRENT_TIMESTAMP' })
   createdAt: Date;
-
-  @Column({ type: "numeric", precision: 3, scale: 1, nullable: true })
-  rating: number | null;
 
   @Column({ type: "numeric", precision: 3, scale: 1, nullable: true })
   ai_rating: number | null;

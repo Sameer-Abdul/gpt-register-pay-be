@@ -18,14 +18,18 @@ export interface AssignmentResponse {
   district: string | null;
   mandal: string | null;
   context: string | null;
-  rating: number | null;
+  ai_rating: number | null;
+  manual_rating: number | null;
+  final_rating: number | null;
 }
 
 export interface MeritListItem {
   id: number;
   register_id: number;
   file_name: string;
-  rating: number;
+  ai_rating: number | null;
+  manual_rating: number | null;
+  final_rating: number;
   state?: string | null;
   district?: string | null;
   mandal?: string | null;
@@ -50,10 +54,10 @@ export interface GroupedByMandal {
 }
 
 export interface MeritList {
-  topStatePerformers: Array<{ state: string; records: MeritListItem[] }>;
-  topDistrictPerformers: Array<{ district: string; records: MeritListItem[] }>;
-  topMandalPerformers: Array<{ mandal: string; records: MeritListItem[] }>;
-  overallChampion: MeritListItem | null;
+  topStatePerformers: Array<{ state: string; records: MeritListItem[] }>
+  topDistrictPerformers: Array<{ district: string; records: MeritListItem[] }>
+  topMandalPerformers: Array<{ mandal: string; records: MeritListItem[] }>
+  overallChampion: MeritListItem | null
 }
 
 @Injectable()
@@ -82,38 +86,21 @@ export class AssignmentsService {
   }
 
   // Upload an assignment file using pluggable storage and update DB with relative path
-  async updateAssignmentRating(
-    assignmentId: number,
-    rating: number
-  ): Promise<{ success: boolean; message?: string; error?: string; data:any;}> {
-    try {
-      const assignment = await this.assignmentRepository.findOne({
-        where: { id: assignmentId }
-      });
+  async updateAssignmentRating(id: number, rating: number) {
+    const assignment = await this.assignmentRepository.findOne({ where: { id } });
+    if (!assignment) throw new Error("Assignment not found");
 
-      if (!assignment) {
-        throw new NotFoundException(`Assignment with ID ${assignmentId} not found`);
-      }
+    assignment.manual_rating = rating;
+    assignment.final_rating = rating;
 
-      // Update the assignment with the manual rating
-      assignment.rating = rating;
-      await this.assignmentRepository.save(assignment);
+    await this.assignmentRepository.save(assignment);
 
-      return {
-        success: true,
-        message: 'Rating updated successfully',
-        data: assignment
-      };
-    } catch (error) {
-      this.logger.error('Error updating assignment rating:', error);
-      return {
-        success: false,
-        error: error.message || 'Failed to update rating',
-        data: null
-      };
-    }
+    return {
+      success: true,
+      manual_rating: rating,
+      final_rating: rating
+    };
   }
-
 
   async uploadAssignmentFile(
     assignmentId: number,
@@ -133,23 +120,18 @@ export class AssignmentsService {
       throw new NotFoundException(`Register with ID ${assignment.registerId} not found`);
     }
 
-    const location = {
-      state: String(register.state || 'Unknown'),
-      mandal: String(register.mandal || 'Unknown'),
-      district: String(register.district || 'Unknown'),
-      schoolName: String(register.schoolCorrespondentName || 'School'),
-    };
+    // No longer need location object as we're using a simpler storage structure
 
-    const relativePath = await this.storage.saveAssignment({
-      buffer: file.buffer,
-      originalName: file.originalname,
-      location,
-    });
+    const relativePath = await this.storage.saveAssignment(
+      assignmentId,
+      file.buffer,
+      file.originalname
+    );
 
-    assignment.fileName = relativePath;
+    assignment.file_path = relativePath;
     assignment.fileType = file.mimetype;
     assignment.fileSize = file.size;
-    assignment.fileData = null as any;
+    // Remove fileData as we're now storing files on disk
     await this.assignmentRepository.save(assignment);
 
     return { assignmentId, relativePath };
@@ -182,7 +164,7 @@ export class AssignmentsService {
       where: { id },
       select: [
         'id', 'registerId', 'fileName', 'fileType', 'fileSize',
-        'state', 'district', 'mandal', 'rating', 'createdAt', 'fileData',
+        'state', 'district', 'mandal', 'ai_rating', 'manual_rating', 'final_rating', 'createdAt', 'fileData',
         'submissionDate', 'firstName', 'lastName', 'context'
       ]
     });
@@ -213,7 +195,8 @@ export class AssignmentsService {
     // First get the assignment with all necessary fields
     const assignment = await this.assignmentRepository.findOne({ 
       where: { id },
-      select: ['id', 'registerId', 'fileName', 'fileType', 'fileSize', 'rating',
+      select: ['id', 'registerId', 'fileName', 'fileType', 'fileSize', 
+        'ai_rating', 'manual_rating', 'final_rating',
         'state', 'district', 'mandal', 'createdAt',
         'submissionDate', 'firstName', 'lastName', 'context']
     });
@@ -222,8 +205,9 @@ export class AssignmentsService {
       return null;
     }
 
-    // Update only the rating
-    assignment.rating = rating;
+    // Update the manual_rating and final_rating
+    assignment.manual_rating = rating;
+    assignment.final_rating = rating;
     
     // Save the updated assignment
     const updatedAssignment = await this.assignmentRepository.save(assignment);
@@ -249,9 +233,9 @@ export class AssignmentsService {
     try {
       this.logger.log('Fetching optimized merit list with user details...');
       
-      // First, let's check if there are any assignments with ratings
+      // First, let's check if there are any assignments with final_ratings
       const hasRatings = await this.assignmentRepository.createQueryBuilder('a')
-        .where('a.rating IS NOT NULL')
+        .where('a.final_rating IS NOT NULL')
         .getCount();
       
       if (hasRatings === 0) {
@@ -271,7 +255,9 @@ export class AssignmentsService {
           'a.id as a_id',
           'a.registerId as a_registerId',
           'a.fileName as a_fileName',
-          'a.rating as a_rating',
+          'a.ai_rating as a_ai_rating',
+          'a.manual_rating as a_manual_rating',
+          'a.final_rating as a_final_rating',
           'a.state as a_registerState',
           'a.district as a_registerDistrict',
           'a.mandal as a_registerMandal',
@@ -284,29 +270,27 @@ export class AssignmentsService {
           'r.mandal as r_mandal'
         ])
         .leftJoin('a.register', 'r')
-        .where('a.rating IS NOT NULL')
-        .orderBy('a.rating', 'DESC')
+        .where('a.final_rating IS NOT NULL')
+        .orderBy('a.final_rating', 'DESC')
         .getRawMany())
         .map(rawPerformer => {
           // Create a clean performer object with proper field mapping
           const performer = {
             id: rawPerformer.a_id,
-            registerId: rawPerformer.a_registerId,
-            fileName: rawPerformer.a_fileName,
-            rating: parseFloat(rawPerformer.a_rating),
-            registerState: rawPerformer.a_registerState || rawPerformer.r_state || null,
-            registerDistrict: rawPerformer.a_registerDistrict || rawPerformer.r_district || null,
-            registerMandal: rawPerformer.a_registerMandal || rawPerformer.r_mandal || null,
+            register_id: rawPerformer.a_registerId,
+            file_name: rawPerformer.a_fileName,
+            ai_rating: rawPerformer.a_ai_rating ? parseFloat(rawPerformer.a_ai_rating) : null,
+            manual_rating: rawPerformer.a_manual_rating ? parseFloat(rawPerformer.a_manual_rating) : null,
+            final_rating: parseFloat(rawPerformer.a_final_rating),
+            state: rawPerformer.a_registerState || rawPerformer.r_state || null,
+            district: rawPerformer.a_registerDistrict || rawPerformer.r_district || null,
+            mandal: rawPerformer.a_registerMandal || rawPerformer.r_mandal || null,
             context: rawPerformer.a_context,
             firstName: rawPerformer.register_first_name || '',
             lastName: rawPerformer.register_last_name || '',
             register: {
               email: rawPerformer.r_email
-            },
-            // Backward compatibility
-            state: rawPerformer.a_registerState || rawPerformer.r_state || null,
-            district: rawPerformer.a_registerDistrict || rawPerformer.r_district || null,
-            mandal: rawPerformer.a_registerMandal || rawPerformer.r_mandal || null
+            }
           };
           
           this.logger.debug('Mapped performer data:', performer);
@@ -327,15 +311,17 @@ export class AssignmentsService {
 
       // Get top 3 overall performers (for states)
       const topStatePerformers = allPerformers.slice(0, 3).map(performer => ({
-        state: performer.registerState || 'N/A',
+        state: performer.state || 'N/A',
         records: [{
           id: performer.id,
-          register_id: performer.registerId,
-          file_name: performer.fileName,
-          rating: performer.rating,
-          registerState: performer.registerState,
-          registerDistrict: performer.registerDistrict,
-          registerMandal: performer.registerMandal,
+          register_id: performer.register_id,
+          file_name: performer.file_name,
+          ai_rating: performer.ai_rating,
+          manual_rating: performer.manual_rating,
+          final_rating: performer.final_rating,
+          state: performer.state,
+          district: performer.district,
+          mandal: performer.mandal,
           first_name: performer.firstName,
           last_name: performer.lastName,
           user_email: performer.register?.email || 'N/A',
@@ -346,12 +332,13 @@ export class AssignmentsService {
       // Group by district and get top 3 districts with their top performers
       const districts = new Map<string, any[]>();
       allPerformers.forEach(performer => {
-        if (!performer.registerDistrict) return;
-        if (!districts.has(performer.registerDistrict)) {
-          districts.set(performer.registerDistrict, []);
+        const district = performer.district;
+        if (!district) return;
+        if (!districts.has(district)) {
+          districts.set(district, []);
         }
-        if (districts.get(performer.registerDistrict)!.length < 3) {
-          districts.get(performer.registerDistrict)!.push(performer);
+        if (districts.get(district)!.length < 3) {
+          districts.get(district)!.push(performer);
         }
       });
 
@@ -359,12 +346,14 @@ export class AssignmentsService {
         district,
         records: performers.map(performer => ({
           id: performer.id,
-          register_id: performer.registerId,
-          file_name: performer.fileName,
-          rating: performer.rating,
-          registerState: performer.registerState,
-          registerDistrict: performer.registerDistrict,
-          registerMandal: performer.registerMandal,
+          register_id: performer.register_id,
+          file_name: performer.file_name,
+          ai_rating: performer.ai_rating,
+          manual_rating: performer.manual_rating,
+          final_rating: performer.final_rating,
+          state: performer.state,
+          district: performer.district,
+          mandal: performer.mandal,
           first_name: performer.firstName,
           last_name: performer.lastName,
           user_email: performer.register?.email || 'N/A',
@@ -375,12 +364,13 @@ export class AssignmentsService {
       // Group by mandal and get top 3 mandals with their top performers
       const mandals = new Map<string, any[]>();
       allPerformers.forEach(performer => {
-        if (!performer.registerMandal) return;
-        if (!mandals.has(performer.registerMandal)) {
-          mandals.set(performer.registerMandal, []);
+        const mandal = performer.mandal;
+        if (!mandal) return;
+        if (!mandals.has(mandal)) {
+          mandals.set(mandal, []);
         }
-        if (mandals.get(performer.registerMandal)!.length < 3) {
-          mandals.get(performer.registerMandal)!.push(performer);
+        if (mandals.get(mandal)!.length < 3) {
+          mandals.get(mandal)!.push(performer);
         }
       });
 
@@ -388,12 +378,14 @@ export class AssignmentsService {
         mandal,
         records: performers.map(performer => ({
           id: performer.id,
-          register_id: performer.registerId,
-          file_name: performer.fileName,
-          rating: performer.rating,
-          registerState: performer.registerState,
-          registerDistrict: performer.registerDistrict,
-          registerMandal: performer.registerMandal,
+          register_id: performer.register_id,
+          file_name: performer.file_name,
+          ai_rating: performer.ai_rating,
+          manual_rating: performer.manual_rating,
+          final_rating: performer.final_rating,
+          state: performer.state,
+          district: performer.district,
+          mandal: performer.mandal,
           first_name: performer.firstName,
           last_name: performer.lastName,
           user_email: performer.register?.email || 'N/A',
@@ -404,15 +396,17 @@ export class AssignmentsService {
       // The overall champion is the first in the all performers list
       const overallChampion = allPerformers[0] ? {
         id: allPerformers[0].id,
-        register_id: allPerformers[0].registerId,
-        registerState: allPerformers[0].registerState,
-        registerDistrict: allPerformers[0].registerDistrict,
-        registerMandal: allPerformers[0].registerMandal,
+        register_id: allPerformers[0].register_id,
+        state: allPerformers[0].state,
+        district: allPerformers[0].district,
+        mandal: allPerformers[0].mandal,
         first_name: allPerformers[0].firstName,
         last_name: allPerformers[0].lastName,
         user_email: allPerformers[0].register?.email || 'N/A',
-        file_name: allPerformers[0].fileName,
-        rating: allPerformers[0].rating,
+        file_name: allPerformers[0].file_name,
+        ai_rating: allPerformers[0].ai_rating,
+        manual_rating: allPerformers[0].manual_rating,
+        final_rating: allPerformers[0].final_rating,
         context: allPerformers[0].context
       } : null;
 
@@ -657,7 +651,9 @@ export class AssignmentsService {
         mandal: verifiedAssignment.mandal,
         registerId: verifiedAssignment.registerId,
         fileName: verifiedAssignment.fileName,
-        rating: verifiedAssignment.rating,
+        ai_rating: verifiedAssignment.ai_rating,
+        manual_rating: verifiedAssignment.manual_rating,
+        final_rating: verifiedAssignment.final_rating,
         context: verifiedAssignment.context,
         firstName: verifiedAssignment.firstName,
         lastName: verifiedAssignment.lastName
@@ -687,7 +683,9 @@ export class AssignmentsService {
           district: savedAssignment.district,
           mandal: savedAssignment.mandal,
           context: savedAssignment.context,
-          rating: savedAssignment.rating,
+          ai_rating: savedAssignment.ai_rating,
+          manual_rating: savedAssignment.manual_rating,
+          final_rating: savedAssignment.final_rating,
           fileName: savedAssignment.fileName,
           fileType: savedAssignment.fileType,
           fileSize: savedAssignment.fileSize,
@@ -730,7 +728,8 @@ export class AssignmentsService {
   private getFallbackRating() {
     const rating = Math.floor(Math.random() * 4) + 6; // Random rating between 6-9
     return {
-      rating,
+      ai_rating: rating,
+      final_rating: rating,
       reason: 'Assigned a default rating as the AI service is currently unavailable.',
       isFallback: true
     };
@@ -745,61 +744,68 @@ export class AssignmentsService {
       // Update the assignment with fallback rating
       const assignment = await this.assignmentRepository.findOne({ where: { id } });
       if (assignment) {
-        assignment.rating = fallback.rating;
+        assignment.ai_rating = fallback.ai_rating;
+        assignment.final_rating = assignment.manual_rating ?? fallback.final_rating;
         await this.assignmentRepository.save(assignment);
       }
       
       return {
-        assignmentId: id,
-        aiRating: fallback.rating,
+        success: true,
+        ai_rating: fallback.ai_rating,
+        final_rating: fallback.final_rating,
         reason: fallback.reason,
         context,
-        message: `AI service unavailable. Used fallback rating: ${fallback.rating}/10`,
+        message: `AI service unavailable. Used fallback rating: ${fallback.final_rating}/10`,
         isFallback: true
       };
     } catch (dbError) {
-      this.logger.error('Error in handleFallbackRating:', dbError);
-      throw dbError;
+      this.logger.error('❌ Failed to save fallback rating:', dbError);
+      throw new Error(`Failed to analyze assignment: ${error.message}`);
     }
   }
 
   async analyzeAssignmentWithAI(id: number, context: string = "") {
     try {
-      const assignment = await this.assignmentRepository.findOne({ 
-        where: { id }
-      });
+      const assignment = await this.assignmentRepository.findOne({ where: { id } });
 
       if (!assignment) {
-        throw new Error(`Assignment ${id} not found`);
+        throw new Error("Assignment not found");
       }
 
-      const apiKey = process.env.GROQ_API_KEY;
-      if (!apiKey) {
-        throw new Error("GROQ_API_KEY is missing");
+      if (!assignment.file_path) {
+        throw new Error("Assignment has no stored file");
       }
 
-      const client = new Groq({ apiKey });
+      const fileContent = await this.storage.getFile(assignment.file_path);
+      if (!fileContent) {
+        throw new Error("File not found in storage");
+      }
 
-      const prompt = `
-Score this assignment from 0 to 10.
-Only output the number.
+      const text = fileContent.toString("utf8");
 
-Assignment Content:
-${context || "No content provided"}
-`;
-
-      const response = await client.chat.completions.create({
-        model: "llama3-8b-8192",
-        messages: [
-          { role: "system", content: "Output ONLY a number." },
-          { role: "user", content: prompt }
-        ],
-        max_tokens: 5,
-        temperature: 0.2,
+      const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "llama3-8b-8192",
+          messages: [
+            { role: "system", content: "Return ONLY a rating 0-10." },
+            { role: "user", content: text }
+          ],
+          temperature: 0.1
+        }),
       });
 
-      const aiText = response?.choices?.[0]?.message?.content?.trim() || "";
-      const rating = Number(aiText.match(/\d+/)?.[0]) || 7; // fallback 7
+      const ai = await groqRes.json();
+      const raw = ai?.choices?.[0]?.message?.content?.trim();
+
+      const rating = Number(raw);
+      if (isNaN(rating)) {
+        throw new Error("Invalid rating from AI");
+      }
 
       assignment.ai_rating = rating;
       assignment.final_rating = assignment.manual_rating ?? rating;
@@ -808,13 +814,15 @@ ${context || "No content provided"}
 
       return {
         success: true,
-        rating,
+        ai_rating: rating,
+        final_rating: assignment.final_rating
       };
 
     } catch (err) {
-      console.error("AI ERROR:", err);
-      throw new InternalServerErrorException("AI analysis failed");
+      throw new InternalServerErrorException({
+        message: "AI analysis failed",
+        error: err.message
+      });
     }
   }
-// Add this at the end of the file
 }
