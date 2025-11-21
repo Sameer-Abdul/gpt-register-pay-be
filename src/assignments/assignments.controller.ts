@@ -30,6 +30,14 @@ export class AssignmentsController {
     return this.assignmentsService.createAssignment(body, file);
   }
 
+  @Post('analyze/:id')
+  async analyzeAssignment(
+    @Param('id') id: string,
+    @Body('context') context?: string,
+  ) {
+    return this.assignmentsService.analyzeAssignmentWithAI(parseInt(id, 10), context || '');
+  }
+
   // New: Upload file to configurable storage path with hierarchical folders
   @Post(':id/upload')
   @UseInterceptors(FileInterceptor('file', { storage: multer.memoryStorage() }))
@@ -48,13 +56,6 @@ export class AssignmentsController {
     };
   }
 
-  @Post(':id/analyze')
-  async analyzeAssignment(
-    @Param('id') id: number,
-    @Body('context') context: string,
-  ) {
-    return this.assignmentsService.analyzeAssignmentWithAI(Number(id), context);
-  }
 
   // List the assignment storage folder tree for verification on Render
   @Get('tree')
@@ -132,30 +133,36 @@ export class AssignmentsController {
 
   // ⭐ Manual Rating Update via Postman or Admin Panel
   @Put(':id')
-  async updateRating(
+  async updateAssignment(
     @Param('id') id: string,
-    @Body() body: { rating: number },
+    @Body() body: { rating?: number; context?: string },
   ) {
     const assignmentId = Number(id);
-    const rating = Number(body.rating);
+    const { rating, context } = body;
 
-    if (isNaN(assignmentId) || isNaN(rating)) {
-      return { message: 'Invalid input — ID and rating must be numbers' };
+    if (isNaN(assignmentId)) {
+      throw new Error('Invalid assignment ID');
     }
 
-    if (rating < 0 || rating > 10) {
-      return { message: 'Rating must be between 0 and 10' };
+    if (rating !== undefined) {
+      const ratingNum = Number(rating);
+      if (isNaN(ratingNum) || ratingNum < 0 || ratingNum > 10) {
+        throw new Error('Rating must be a number between 0 and 10');
+      }
+      
+      const result = await this.assignmentsService.updateAssignmentRating(assignmentId, ratingNum);
+      return {
+        success: true,
+        message: `Rating updated successfully for assignment ${assignmentId}`,
+        data: result
+      };
     }
 
-    const updated = await this.assignmentsService.updateRating(assignmentId, rating);
-
-    if (!updated) {
-      return { message: `Assignment ${assignmentId} not found` };
+    // If no rating provided but context is there, it's an AI analysis request
+    if (context !== undefined) {
+      return this.assignmentsService.analyzeAssignmentWithAI(assignmentId, context);
     }
 
-    return {
-      message: `Rating updated successfully for assignment ${assignmentId}`,
-      assignment: updated,
-    };
+    throw new Error('Either rating or context must be provided');
   }
 }

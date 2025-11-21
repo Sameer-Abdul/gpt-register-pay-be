@@ -47,4 +47,30 @@ export class LocalAssignmentStorageService implements AssignmentStorage {
     const rel = path.relative(baseDir, fullPath).split(path.sep).join('/');
     return rel;
   }
+
+  async getFile(assignmentId: number): Promise<Buffer | null> {
+    try {
+      const basePath = this.configService.get<string>('ASSIGNMENT_BASE_PATH') || 'assignments';
+      const baseDir = path.isAbsolute(basePath) ? basePath : path.resolve(basePath);
+      
+      // Search for the file in all subdirectories
+      const searchDir = path.join(baseDir, '**', `*_${assignmentId}_*`);
+      const files = await fs.readdir(path.dirname(searchDir), { recursive: true });
+      
+      const matchingFile = files.find(file => {
+        const fileName = path.basename(file.toString());
+        return fileName.includes(`_${assignmentId}_`);
+      });
+
+      if (!matchingFile) {
+        return null;
+      }
+
+      const filePath = path.join(baseDir, matchingFile.toString());
+      return await fs.readFile(filePath);
+    } catch (error) {
+      console.error(`[Storage] Error retrieving file for assignment ${assignmentId}:`, error);
+      return null;
+    }
+  }
 }

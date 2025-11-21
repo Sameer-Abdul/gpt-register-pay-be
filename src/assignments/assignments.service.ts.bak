@@ -87,7 +87,7 @@ export class AssignmentsService {
   async updateAssignmentRating(
     assignmentId: number,
     rating: number
-  ): Promise<{ success: boolean; message?: string; error?: string; data:any;}> {
+  ): Promise<{ success: boolean; message?: string; error?: string; data?: any }> {
     try {
       const assignment = await this.assignmentRepository.findOne({
         where: { id: assignmentId }
@@ -110,12 +110,10 @@ export class AssignmentsService {
       this.logger.error('Error updating assignment rating:', error);
       return {
         success: false,
-        error: error.message || 'Failed to update rating',
-        data: null
+        error: error.message || 'Failed to update rating'
       };
     }
   }
-
 
   async uploadAssignmentFile(
     assignmentId: number,
@@ -206,33 +204,6 @@ export class AssignmentsService {
     
     return result;
   }
-
-  async updateRating(id: number, rating: number): Promise<Assignment | null> {
-    if (rating < 0 || rating > 10) {
-      throw new Error('Rating must be between 0 and 10');
-    }
-
-    // First get the assignment with all necessary fields
-    const assignment = await this.assignmentRepository.findOne({ 
-      where: { id },
-      select: ['id', 'registerId', 'fileName', 'fileType', 'fileSize', 'rating',
-        'state', 'district', 'mandal', 'createdAt',
-        'submissionDate', 'firstName', 'lastName', 'context']
-    });
-    
-    if (!assignment) {
-      return null;
-    }
-
-    // Update only the rating
-    assignment.rating = rating;
-    
-    // Save the updated assignment
-    const updatedAssignment = await this.assignmentRepository.save(assignment);
-    
-    // Prepare the response with the correct field names
-    const result = { 
-      ...updatedAssignment,
       // Map the fields to match the expected response format
       register_state: updatedAssignment.state,
       register_district: updatedAssignment.district,
