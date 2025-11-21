@@ -53,14 +53,18 @@ export class TelegramBot {
   }
 
   async launch() {
-  try {
-    this.bot.launch();
-    console.log("🤖 Telegram bot launched (getMe disabled for Render startup)");
-    process.once('SIGINT', () => this.bot.stop('SIGINT'));
-    process.once('SIGTERM', () => this.bot.stop('SIGTERM'));
-  } catch (error) {
-    console.warn("⚠️ Telegram bot could not be launched:", error.message);
+    try {
+      // Verify bot token is valid and API is reachable
+      await this.bot.telegram.getMe();
+      console.log('🤖 Telegram bot connected successfully');
+      
+      // Start the bot
+      this.bot.launch();
+      process.once('SIGINT', () => this.bot.stop('SIGINT'));
+      process.once('SIGTERM', () => this.bot.stop('SIGTERM'));
+    } catch (error) {
+      console.warn('⚠️ Telegram bot could not connect to the API. Bot will not be available.');
+      console.debug('Telegram API error:', error.message);
+    }
   }
-}
-
 }

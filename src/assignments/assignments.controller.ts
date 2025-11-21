@@ -33,9 +33,12 @@ export class AssignmentsController {
   @Post('analyze/:id')
   async analyzeAssignment(
     @Param('id') id: string,
-    @Body('context') context?: string,
+    @Body('context') context?: string
   ) {
-    return this.assignmentsService.analyzeAssignmentWithAI(parseInt(id, 10), context || '');
+    return this.assignmentsService.analyzeAssignmentWithAI(
+      parseInt(id, 10),
+      context || ""
+    );
   }
 
   // New: Upload file to configurable storage path with hierarchical folders

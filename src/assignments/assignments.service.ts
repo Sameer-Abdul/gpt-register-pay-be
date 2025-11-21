@@ -1,15 +1,13 @@
 import * as multer from 'multer';
-import { Injectable, Logger, NotFoundException, Inject } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, Inject, InternalServerErrorException } from '@nestjs/common';
 import { MulterFile } from '../common/types';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Connection, Not, IsNull, getConnection } from 'typeorm';
 import { Assignment } from './entities/assignment.entity';
 import { Register } from '../register/entities/register.entity';
 import * as fs from 'fs';
-import * as path from 'path';
 import * as os from 'os';
-// Using dynamic import for pdf-parse to handle ESM
-import { Ollama } from 'ollama';
+import Groq from 'groq-sdk';
 import type { AssignmentStorage } from './storage/assignment-storage.interface';
 
 // Define response interfaces
@@ -20,7 +18,7 @@ export interface AssignmentResponse {
   district: string | null;
   mandal: string | null;
   context: string | null;
-  rating?: number;
+  rating: number | null;
 }
 
 export interface MeritListItem {
@@ -748,7 +746,7 @@ export class AssignmentsService {
       const assignment = await this.assignmentRepository.findOne({ where: { id } });
       if (assignment) {
         assignment.rating = fallback.rating;
-        await this.updateAssignmentRating(id, fallback.rating);
+        await this.assignmentRepository.save(assignment);
       }
       
       return {
@@ -760,145 +758,62 @@ export class AssignmentsService {
         isFallback: true
       };
     } catch (dbError) {
-      this.logger.error('❌ Failed to save fallback rating:', dbError);
-      throw new Error(`Failed to analyze assignment: ${error.message}`);
+      this.logger.error('Error in handleFallbackRating:', dbError);
+      throw dbError;
     }
   }
 
-  async analyzeAssignmentWithAI(id: number, context: string) {
-    this.logger.log(`🧠 Starting AI analysis for assignment ${id} with context "${context}"`);
-    
+  async analyzeAssignmentWithAI(id: number, context: string = "") {
     try {
-      // 1️⃣ Fetch the assignment record with error handling
       const assignment = await this.assignmentRepository.findOne({ 
-        where: { id },
-        select: [
-          'id', 
-          'fileData', 
-          'registerId', 
-          'state', 
-          'district', 
-          'mandal', 
-          'rating',
-          'firstName',
-          'lastName',
-          'context'
-        ]
+        where: { id }
       });
 
       if (!assignment) {
-        throw new NotFoundException(`Assignment with ID ${id} not found`);
+        throw new Error(`Assignment ${id} not found`);
       }
 
-      // 2️⃣ Extract text from PDF
-      if (!assignment.fileData) {
-        throw new Error('No file data available for analysis');
+      const apiKey = process.env.GROQ_API_KEY;
+      if (!apiKey) {
+        throw new Error("GROQ_API_KEY is missing");
       }
 
-      const pdfText = await this.extractTextFromPdf(assignment.fileData);
-      if (!pdfText) {
-        throw new Error('Failed to extract text from PDF');
-      }
+      const client = new Groq({ apiKey });
 
-      // 3️⃣ Call Ollama for analysis
-      const ollama = new Ollama({ host: 'http://localhost:11434' });
-      
-      // Get available models
-      const availableModels = await ollama.list();
-      if (!availableModels.models || availableModels.models.length === 0) {
-        throw new Error('No models available. Please install a model first.');
-      }
-
-      // Select the best available model
-      const preferredModels = ['gemma:2b', 'gemma:4b', 'llama3:4b', 'llama3:latest'];
-      const modelToUse = preferredModels.find(model => 
-        availableModels.models.some((m: any) => m.name === model)
-      ) || availableModels.models[0].name;
-
-      this.logger.log(`🤖 Using model: ${modelToUse}`);
-
-      // 4️⃣ Generate prompt and get response
-      const locationInfo = [
-        assignment.state ? `State: ${assignment.state}` : '',
-        assignment.district ? `District: ${assignment.district}` : '',
-        assignment.mandal ? `Mandal: ${assignment.mandal}` : ''
-      ].filter(Boolean).join(', ');
-
-      const prompt = `Analyze the following assignment and provide a rating from 1-10 based on relevance to the context:
-      
-Context: ${context}
-
-Location: ${locationInfo || 'Not specified'}
-Student: ${assignment.firstName || ''} ${assignment.lastName || ''}
+      const prompt = `
+Score this assignment from 0 to 10.
+Only output the number.
 
 Assignment Content:
-${pdfText.substring(0, 2000)}...
+${context || "No content provided"}
+`;
 
-Please respond with a JSON object containing:
-- rating: number (1-10)
-- reason: string (brief explanation)`;
+      const response = await client.chat.completions.create({
+        model: "llama3-8b-8192",
+        messages: [
+          { role: "system", content: "Output ONLY a number." },
+          { role: "user", content: prompt }
+        ],
+        max_tokens: 5,
+        temperature: 0.2,
+      });
 
-      this.logger.log(`📝 Prompt length: ${prompt.length} chars`);
-      
-      // Make the API call with timeout
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000); // 1 minute timeout
-      
-      try {
-        const response = await fetch('http://localhost:11434/api/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: modelToUse,
-            prompt: prompt,
-            stream: false,
-            options: {
-              temperature: 0.7,
-              top_p: 0.9
-            }
-          }),
-          signal: controller.signal
-        });
+      const aiText = response?.choices?.[0]?.message?.content?.trim() || "";
+      const rating = Number(aiText.match(/\d+/)?.[0]) || 7; // fallback 7
 
-        clearTimeout(timeoutId);
+      assignment.ai_rating = rating;
+      assignment.final_rating = assignment.manual_rating ?? rating;
 
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(`Ollama API error: ${response.status} - ${JSON.stringify(errorData)}`);
-        }
+      await this.assignmentRepository.save(assignment);
 
-        const data = await response.json();
-        
-        // 5️⃣ Parse and validate response
-        let aiResult;
-        try {
-          aiResult = typeof data === 'string' ? JSON.parse(data) : data;
-          if (typeof aiResult.rating !== 'number' || !aiResult.reason) {
-            throw new Error('Invalid response format from AI');
-          }
-        } catch (e) {
-          throw new Error(`Failed to parse AI response: ${e.message}`);
-        }
+      return {
+        success: true,
+        rating,
+      };
 
-        // 6️⃣ Update assignment with rating
-        assignment.rating = aiResult.rating;
-        await this.assignmentRepository.save(assignment);
-
-        // 7️⃣ Return response
-        return {
-          assignmentId: id,
-          aiRating: aiResult.rating,
-          reason: aiResult.reason,
-          context,
-          message: `AI rated assignment ${aiResult.rating}/10 for context relevance.`
-        };
-      } catch (error) {
-        clearTimeout(timeoutId);
-        throw error; // Re-throw to be caught by the outer catch
-      }
-    } catch (error) {
-      this.logger.error(`❌ Error in analyzeAssignmentWithAI: ${error.message}`, error.stack);
-      return this.handleFallbackRating(id, context, error);
+    } catch (err) {
+      console.error("AI ERROR:", err);
+      throw new InternalServerErrorException("AI analysis failed");
     }
   }
 // Add this at the end of the file

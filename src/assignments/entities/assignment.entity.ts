@@ -31,8 +31,17 @@ export class Assignment {
   @Column({ name: 'created_at', type: 'timestamp with time zone', default: () => 'CURRENT_TIMESTAMP' })
   createdAt: Date;
 
-  @Column({ nullable: true })
-  rating: number;
+  @Column({ type: "numeric", precision: 3, scale: 1, nullable: true })
+  rating: number | null;
+
+  @Column({ type: "numeric", precision: 3, scale: 1, nullable: true })
+  ai_rating: number | null;
+
+  @Column({ type: "numeric", precision: 3, scale: 1, nullable: true })
+  manual_rating: number | null;
+
+  @Column({ type: "numeric", precision: 3, scale: 1, nullable: true })
+  final_rating: number | null;
 
   @Column({ name: 'state', type: 'varchar', length: 100, nullable: true })
   state: string | null;
