@@ -740,22 +740,42 @@ export class AssignmentsService {
 
   async analyzeAssignmentWithAI(id: number, context: string = "") {
     try {
-      const assignment = await this.assignmentRepository.findOne({ where: { id } });
+      const assignment = await this.assignmentRepository.findOne({
+        where: { id },
+        select: [
+          "id",
+          "fileData",
+          "file_path",
+          "manual_rating",
+          "ai_rating",
+          "final_rating"
+        ]
+      });
 
       if (!assignment) {
         throw new Error("Assignment not found");
       }
 
-      if (!assignment.file_path) {
-        throw new Error("Assignment has no stored file");
-      }
+      // First try to get file content from file_data if available
+      let fileContent: Buffer | null = null;
+      let text = '';
 
-      const fileContent = await this.storage.getFile(assignment.file_path);
-      if (!fileContent) {
-        throw new Error("File not found in storage");
+      if (assignment.fileData) {
+        fileContent = assignment.fileData;
+        text = fileContent.toString('utf8');
+      } 
+      // If no fileData, try to get from file_path
+      else if (assignment.file_path) {
+        fileContent = await this.storage.getFile(assignment.file_path);
+        if (!fileContent) {
+          throw new Error("File not found in storage");
+        }
+        text = fileContent.toString('utf8');
+      } 
+      // If neither is available, throw an error
+      else {
+        throw new Error("Assignment has no stored file data or path");
       }
-
-      const text = fileContent.toString("utf8");
 
       const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
