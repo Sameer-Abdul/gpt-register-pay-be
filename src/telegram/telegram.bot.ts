@@ -52,9 +52,15 @@ export class TelegramBot {
     }
   }
 
-  launch() {
+  async launch() {
+  try {
     this.bot.launch();
+    console.log("🤖 Telegram bot launched (getMe disabled for Render startup)");
     process.once('SIGINT', () => this.bot.stop('SIGINT'));
     process.once('SIGTERM', () => this.bot.stop('SIGTERM'));
+  } catch (error) {
+    console.warn("⚠️ Telegram bot could not be launched:", error.message);
   }
+}
+
 }
