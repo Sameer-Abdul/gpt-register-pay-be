@@ -16,7 +16,13 @@ export interface AssignmentStorage {
   saveAssignment(
     assignmentId: number,
     file: Buffer,
-    originalName: string
+    originalName: string,
+    meta?: {
+      state: string;
+      district: string;
+      mandal: string;
+      school: string;
+    }
   ): Promise<string>;
 
   getFile(filePath: string): Promise<Buffer | null>;

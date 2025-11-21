@@ -122,12 +122,17 @@ export class AssignmentsService {
       throw new NotFoundException(`Register with ID ${assignment.registerId} not found`);
     }
 
-    // No longer need location object as we're using a simpler storage structure
-
+    // Include location metadata when saving the file
     const relativePath = await this.storage.saveAssignment(
       assignmentId,
       file.buffer,
-      file.originalname
+      file.originalname,
+      {
+        state: register.state || 'Unknown',
+        district: register.district || 'Unknown',
+        mandal: register.mandal || 'Unknown',
+        school: register.schoolCorrespondentName || 'Unknown_School'
+      }
     );
 
     assignment.file_path = relativePath;

@@ -20,13 +20,39 @@ export class LocalAssignmentStorageService implements AssignmentStorage {
   async saveAssignment(
     assignmentId: number,
     file: Buffer,
-    originalName: string
+    originalName: string,
+    meta?: {
+      state: string;
+      district: string;
+      mandal: string;
+      school: string;
+    }
   ): Promise<string> {
     const basePath = this.configService.get<string>('ASSIGNMENT_BASE_PATH') || 'assignments';
     const baseDir = path.isAbsolute(basePath) ? basePath : path.resolve(basePath);
     
-    // Create a directory structure based on assignment ID
-    const dir = path.join(baseDir, 'assignments', assignmentId.toString());
+    // Default to 'Unknown' if meta is not provided for backward compatibility
+    const state = meta?.state || 'Unknown';
+    const district = meta?.district || 'Unknown';
+    const mandal = meta?.mandal || 'Unknown';
+    const school = meta?.school || 'Unknown_School';
+
+    // Sanitize all path segments
+    const sanitizedState = sanitizeSegment(state);
+    const sanitizedDistrict = sanitizeSegment(district);
+    const sanitizedMandal = sanitizeSegment(mandal);
+    const sanitizedSchool = sanitizeSegment(school);
+
+    // Create a directory structure based on location
+    const dir = path.join(
+      baseDir,
+      sanitizedState,
+      sanitizedDistrict,
+      sanitizedMandal,
+      sanitizedSchool,
+      assignmentId.toString()
+    );
+    
     await fs.mkdir(dir, { recursive: true });
 
     // Generate a safe filename with the original extension
