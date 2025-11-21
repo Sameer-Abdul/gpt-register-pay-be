@@ -17,7 +17,7 @@ export class Assignment {
   fileName: string;
 
   @Column({ name: 'file_data', type: 'bytea', nullable: true })
-  fileData: Buffer;
+  fileData: Buffer | null;
 
   @Column({ name: 'file_size' })
   fileSize: number;

@@ -475,7 +475,8 @@ export class AssignmentsService {
       if (!file.buffer) {
         throw new Error('File buffer is empty');
       }
-      assignment.fileData = file.buffer;
+      // Don't store file data directly in the database
+      assignment.fileData = null;
       assignment.fileSize = file.size;
       assignment.fileType = file.mimetype;
       assignment.context = data.context || null;
@@ -563,10 +564,26 @@ export class AssignmentsService {
         createdAt: assignment.createdAt
       }, null, 2));
 
-      // Save using repository.save() for better type safety
+      // Save the assignment first to get an ID
       const savedAssignment = await queryRunner.manager
         .getRepository(Assignment)
         .save(assignment);
+        
+      // Save the file using the storage service
+      try {
+        const filePath = await this.storage.saveAssignment(
+          savedAssignment.id,
+          file.buffer,
+          file.originalname
+        );
+        
+        // Update the assignment with the file path
+        savedAssignment.file_path = filePath;
+        await queryRunner.manager.getRepository(Assignment).save(savedAssignment);
+      } catch (storageError) {
+        this.logger.error('Failed to save file to storage:', storageError);
+        throw new Error('Failed to save assignment file');
+      }
         
       // Log the saved assignment data
       this.logger.log('Saved assignment data:', {
@@ -756,25 +773,26 @@ export class AssignmentsService {
         throw new Error("Assignment not found");
       }
 
-      // First try to get file content from file_data if available
       let fileContent: Buffer | null = null;
       let text = '';
 
-      if (assignment.fileData) {
-        fileContent = assignment.fileData;
-        text = fileContent.toString('utf8');
-      } 
-      // If no fileData, try to get from file_path
-      else if (assignment.file_path) {
+      // First try to get file content from file_path (preferred method)
+      if (assignment.file_path) {
         fileContent = await this.storage.getFile(assignment.file_path);
         if (!fileContent) {
-          throw new Error("File not found in storage");
+          throw new Error("File not found in storage at path: " + assignment.file_path);
         }
+        text = fileContent.toString('utf8');
+      } 
+      // Fallback to fileData for backward compatibility (should be rare)
+      else if (assignment.fileData) {
+        this.logger.warn(`Using fileData for assignment ${id} - consider migrating to file_path`);
+        fileContent = assignment.fileData;
         text = fileContent.toString('utf8');
       } 
       // If neither is available, throw an error
       else {
-        throw new Error("Assignment has no stored file data or path");
+        throw new Error("Assignment has no stored file data. Please re-upload the file.");
       }
 
       const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
