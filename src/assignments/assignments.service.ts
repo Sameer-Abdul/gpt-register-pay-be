@@ -86,19 +86,19 @@ export class AssignmentsService {
   }
 
   // Upload an assignment file using pluggable storage and update DB with relative path
-  async updateAssignmentRating(id: number, rating: number) {
+  async updateAssignmentRating(id: number, manualRating: number) {
     const assignment = await this.assignmentRepository.findOne({ where: { id } });
     if (!assignment) throw new Error("Assignment not found");
 
-    assignment.manual_rating = rating;
-    assignment.final_rating = rating;
+    assignment.manual_rating = manualRating;
+    assignment.final_rating = manualRating;
 
     await this.assignmentRepository.save(assignment);
 
     return {
       success: true,
-      manual_rating: rating,
-      final_rating: rating
+      manual_rating: manualRating,
+      final_rating: manualRating
     };
   }
 
@@ -187,46 +187,18 @@ export class AssignmentsService {
     return result;
   }
 
-  async updateRating(id: number, rating: number): Promise<Assignment | null> {
-    if (rating < 0 || rating > 10) {
-      throw new Error('Rating must be between 0 and 10');
+  async updateRating(id: number, manualRating: number): Promise<Assignment | null> {
+    if (manualRating < 0 || manualRating > 10) {
+      throw new Error("Rating must be between 0 and 10");
     }
 
-    // First get the assignment with all necessary fields
-    const assignment = await this.assignmentRepository.findOne({ 
-      where: { id },
-      select: ['id', 'registerId', 'fileName', 'fileType', 'fileSize', 
-        'ai_rating', 'manual_rating', 'final_rating',
-        'state', 'district', 'mandal', 'createdAt',
-        'submissionDate', 'firstName', 'lastName', 'context']
-    });
-    
-    if (!assignment) {
-      return null;
-    }
+    const assignment = await this.assignmentRepository.findOne({ where: { id } });
+    if (!assignment) return null;
 
-    // Update the manual_rating and final_rating
-    assignment.manual_rating = rating;
-    assignment.final_rating = rating;
-    
-    // Save the updated assignment
-    const updatedAssignment = await this.assignmentRepository.save(assignment);
-    
-    // Prepare the response with the correct field names
-    const result = { 
-      ...updatedAssignment,
-      // Map the fields to match the expected response format
-      register_state: updatedAssignment.state,
-      register_district: updatedAssignment.district,
-      register_mandal: updatedAssignment.mandal
-    } as any;
-    
-    // Convert file data to base64 if it exists
-    if (result.fileData) {
-      result.fileData = result.fileData.toString('base64');
-    }
-    
-    return result;
+    assignment.manual_rating = manualRating;
+    assignment.final_rating = manualRating;
+
+    return await this.assignmentRepository.save(assignment);
   }
 
   async getMeritList(): Promise<MeritList> {
@@ -627,7 +599,9 @@ export class AssignmentsService {
           'assignment.registerDistrict',
           'assignment.registerMandal',
           'assignment.fileName',
-          'assignment.rating',
+          'assignment.ai_rating',
+          'assignment.manual_rating',
+          'assignment.final_rating',
           'assignment.context',
           'assignment.firstName',
           'assignment.lastName'
