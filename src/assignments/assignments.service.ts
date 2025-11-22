@@ -1,7 +1,9 @@
 import * as multer from 'multer';
 import { Injectable, Logger, NotFoundException, Inject, InternalServerErrorException } from '@nestjs/common';
-// Using dynamic import for pdf-parse to handle TypeScript issues
+// PDF and OCR imports
+// FIX: pdf-parse must use CommonJS require
 const pdfParse = require('pdf-parse');
+const Tesseract = require('tesseract.js');
 import { MulterFile } from '../common/types';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Connection, Not, IsNull, getConnection } from 'typeorm';
@@ -836,65 +838,31 @@ export class AssignmentsService {
 
       // If PDF
       if (assignment.fileType?.includes("pdf")) {
+        // ---- PDF TEXT EXTRACTION ----
         try {
-          // Ensure buffer is properly formatted for pdf-parse
+          // Fix PostgreSQL BYTEA Buffer
           const fixedBuffer = this.fixPgByteA(buffer);
-          if (!fixedBuffer) {
-            throw new Error("Failed to process PDF buffer");
+          if (!fixedBuffer || !Buffer.isBuffer(fixedBuffer)) {
+            throw new Error("Invalid or empty PDF buffer");
           }
-          
-          // 1️⃣ Log buffer information
-          this.logger.log('📦 Fixed PDF Buffer Type:', typeof fixedBuffer);
-          this.logger.log('📦 Is Buffer:', Buffer.isBuffer(fixedBuffer));
-          this.logger.log('📦 Buffer length:', fixedBuffer.length);
-          
-          if (fixedBuffer) {
-            // 2️⃣ Log first 10 bytes in hex and text
-            const startBytes = fixedBuffer.slice(0, 10);
-            this.logger.log('📄 PDF buffer start (first 10 bytes):', startBytes);
-            this.logger.log('📄 Hex representation:', startBytes.toString('hex'));
-            
-            // 3️⃣ Check PDF header
-            const header = fixedBuffer.slice(0, 4).toString();
-            this.logger.log('📄 PDF Header Text:', header);
-            
-            if (header !== "%PDF") {
-              this.logger.error('❌ INVALID PDF HEADER — buffer is corrupted before parsing');
-              this.logger.error('Expected: %PDF, Got:', header);
-              
-              // 4️⃣ Additional debug: Check for common issues
-              const bufferStr = fixedBuffer.toString('utf8', 0, 50);
-              if (bufferStr.includes('\x25') || bufferStr.includes('\x2e')) {
-                this.logger.error('⚠️  Buffer appears to contain escaped hex string (\x25)');
-              }
-              if (bufferStr.includes('PDF-')) {
-                this.logger.log('ℹ️  PDF marker found but at wrong position');
-              }
-              
-              // Try to find PDF header in first 100 bytes
-              const searchWindow = fixedBuffer.slice(0, 100);
-              const pdfPos = searchWindow.indexOf('%PDF');
-              if (pdfPos > 0) {
-                this.logger.log(`ℹ️  Found PDF header at position ${pdfPos}`);
-              }
-            } else {
-              this.logger.log('✅ PDF header OK');
-            }
+
+          // Parse PDF
+          const parsed = await pdfParse(fixedBuffer);
+
+          if (!parsed || !parsed.text || !parsed.text.trim()) {
+            throw new Error("PDF contains no extractable text");
           }
-          
-          // 5️⃣ Now try to parse the PDF
-          this.logger.log('🔍 Attempting to parse PDF...');
-          const pdfData = await pdfParse(fixedBuffer);
-          extractedText = pdfData.text?.trim() || "";
-          
-          // 6️⃣ Log extraction results
-          this.logger.log(`✅ PDF parsed successfully. Extracted text length: ${extractedText.length}`);
-          if (extractedText.length > 0) {
-            this.logger.log(`📝 Text preview: ${extractedText.substring(0, 100).replace(/\s+/g, ' ')}...`);
-          }
-        } catch (err) {
-          this.logger.error('PDF parse error:', err);
-          throw new Error(`Failed to extract text from PDF: ${err.message}`);
+
+          extractedText = parsed.text.trim();
+          this.logger.debug(`✅ Extracted ${extractedText.length} characters from PDF`);
+          this.logger.debug(`📝 Text preview: ${extractedText.substring(0, 100).replace(/\s+/g, ' ')}...`);
+
+        } catch (pdfError: any) {
+          this.logger.error("PDF processing failed:", pdfError);
+          throw new InternalServerErrorException({
+            message: "AI analysis failed",
+            error: `Failed to process PDF: ${pdfError.message}` 
+          });
         }
       }
       // If normal text file
