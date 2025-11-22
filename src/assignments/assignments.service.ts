@@ -842,11 +842,11 @@ export class AssignmentsService {
       // 4. Call Groq using official SDK
       this.logger.log('Calling Groq API with text length:', extractedText.length);
       const completion = await this.groq.chat.completions.create({
-        model: "llama-3.2-90b-text-preview",
+        model: "openai/gpt-oss-20b",
         messages: [
           {
             role: "system",
-            content: "Respond ONLY with a number from 0 to 10."
+            content: "Respond ONLY with a number between 0 and 10."
           },
           {
             role: "user",
@@ -854,7 +854,7 @@ export class AssignmentsService {
           },
         ],
         temperature: 0.1,
-        max_tokens: 5,
+        max_tokens: 5
       });
 
       const raw = completion?.choices?.[0]?.message?.content?.trim();
