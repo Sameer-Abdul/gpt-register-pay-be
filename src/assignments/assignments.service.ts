@@ -1,8 +1,8 @@
 import * as multer from 'multer';
 import { Injectable, Logger, NotFoundException, Inject, InternalServerErrorException } from '@nestjs/common';
 // PDF text extraction
-// Using direct path for Node.js 22+ compatibility
-const pdfParse = require('pdf-parse/lib/pdf-parse.js');
+// Using require for pdf-parse (compatible with version 2.4.5)
+const pdfParse = require('pdf-parse');
 import { MulterFile } from '../common/types';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Connection, Not, IsNull, getConnection } from 'typeorm';
