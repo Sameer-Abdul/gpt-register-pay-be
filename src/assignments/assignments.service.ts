@@ -1,16 +1,18 @@
 import * as multer from 'multer';
 import { Injectable, Logger, NotFoundException, Inject, InternalServerErrorException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, Connection, Not, IsNull, getConnection } from 'typeorm';
+import Groq from 'groq-sdk';
+
 // PDF text extraction
 // Using require for pdf-parse (compatible with version 2.4.5)
 const pdfParse = require('pdf-parse');
+
 import { MulterFile } from '../common/types';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Connection, Not, IsNull, getConnection } from 'typeorm';
 import { Assignment } from './entities/assignment.entity';
 import { Register } from '../register/entities/register.entity';
 import * as fs from 'fs';
 import * as os from 'os';
-import Groq from 'groq-sdk';
 import type { AssignmentStorage } from './storage/assignment-storage.interface';
 
 // Define response interfaces
@@ -67,6 +69,8 @@ export interface MeritList {
 export class AssignmentsService {
   private readonly logger = new Logger(AssignmentsService.name);
 
+  private groq: Groq;
+
   constructor(
     @InjectRepository(Assignment)
     private readonly assignmentRepository: Repository<Assignment>,
@@ -74,7 +78,12 @@ export class AssignmentsService {
     private readonly registerRepository: Repository<Register>,
     private readonly connection: Connection,
     @Inject('AssignmentStorage') private readonly storage: AssignmentStorage,
-  ) {}
+  ) {
+    // Initialize Groq SDK
+    this.groq = new Groq({
+      apiKey: process.env.GROQ_API_KEY,
+    });
+  }
 
   private async extractTextFromPdf(buffer: Buffer): Promise<string> {
     try {
@@ -794,126 +803,70 @@ export class AssignmentsService {
 
   async analyzeAssignmentWithAI(id: number, context: string = "") {
     try {
-      // Fetch assignment with required fields
+      // 1. Fetch assignment
       const assignment = await this.assignmentRepository.findOne({
         where: { id },
-        select: [
-          "id",
-          "fileData",
-          "file_path",
-          "fileType",
-          "manual_rating",
-          "ai_rating",
-          "final_rating",
-        ],
+        select: ["id", "fileData", "file_path", "fileType", "manual_rating", "ai_rating", "final_rating"]
       });
 
-      if (!assignment) {
-        throw new Error("Assignment not found");
-      }
+      if (!assignment) throw new Error("Assignment not found");
 
+      // 2. Load PDF buffer
       let buffer: Buffer | null = null;
 
-      // ------------------------------
-      // 1) Get file buffer (DB first, then file system)
-      // ------------------------------
       if (assignment.fileData) {
-        const fixedBuffer = this.fixPgByteA(assignment.fileData);
-        if (!fixedBuffer) {
-          throw new Error("Failed to process file data from database.");
-        }
-        buffer = fixedBuffer;
+        buffer = this.fixPgByteA(assignment.fileData);
       } else if (assignment.file_path) {
-        const fileData = await this.storage.getFile(assignment.file_path);
-        if (!fileData) {
-          throw new Error("File not found on disk. Please re-upload the file.");
-        }
-        const fixedBuffer = this.fixPgByteA(fileData);
-        if (!fixedBuffer) {
-          throw new Error("Failed to process file data from storage.");
-        }
-        buffer = fixedBuffer;
-      } else {
-        throw new Error("Assignment has no stored file. Please re-upload the file.");
+        const diskData = await this.storage.getFile(assignment.file_path);
+        buffer = this.fixPgByteA(diskData);
       }
 
       if (!buffer || buffer.length === 0) {
-        throw new Error("Stored file is empty or unreadable.");
+        throw new Error("File buffer empty or corrupted");
       }
 
-      // ------------------------------
-      // 2) Extract text (PDF or plain text)
-      // ------------------------------
+      // 3. Extract text
       let extractedText = "";
 
-      // If PDF
       if (assignment.fileType?.includes("pdf")) {
-        // ---- PDF TEXT EXTRACTION ----
-        try {
-          // Fix PostgreSQL BYTEA Buffer
-          const fixedBuffer = this.fixPgByteA(buffer);
-          if (!fixedBuffer || !Buffer.isBuffer(fixedBuffer)) {
-            throw new Error("Invalid or empty PDF buffer");
-          }
-
-          // Parse PDF
-          const parsed = await pdfParse(fixedBuffer);
-
-          if (!parsed || !parsed.text || !parsed.text.trim()) {
-            throw new Error("PDF contains no extractable text");
-          }
-
-          extractedText = parsed.text.trim();
-          this.logger.debug(`✅ Extracted ${extractedText.length} characters from PDF`);
-          this.logger.debug(`📝 Text preview: ${extractedText.substring(0, 100).replace(/\s+/g, ' ')}...`);
-
-        } catch (pdfError: any) {
-          this.logger.error("PDF processing failed:", pdfError);
-          throw new InternalServerErrorException({
-            message: "AI analysis failed",
-            error: `Failed to process PDF: ${pdfError.message}` 
-          });
-        }
-      }
-      // If normal text file
-      else {
+        const parsed = await pdfParse(buffer);
+        extractedText = parsed.text?.trim() ?? "";
+        this.logger.debug(`✅ Extracted ${extractedText.length} characters from PDF`);
+      } else {
         extractedText = buffer.toString("utf8").trim();
       }
 
-      if (!extractedText || extractedText.length < 10) {
-        throw new Error("Extracted text is too short. File may be corrupted.");
+      if (extractedText.length < 20) {
+        throw new Error("Text extraction failed or too short");
       }
 
-      // ------------------------------
-      // 3) Call Groq AI to get rating
-      // ------------------------------
-      const aiRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "llama3-8b-8192",
-          messages: [
-            { role: "system", content: "You must respond with ONLY a number between 0 and 10. No text." },
-            { role: "user", content: extractedText }
-          ],
-          temperature: 0.1,
-        }),
+      // 4. Call Groq using official SDK
+      this.logger.log('Calling Groq API with text length:', extractedText.length);
+      const completion = await this.groq.chat.completions.create({
+        model: "llama-3.2-90b-text-preview",
+        messages: [
+          {
+            role: "system",
+            content: "Respond ONLY with a number from 0 to 10."
+          },
+          {
+            role: "user",
+            content: extractedText
+          },
+        ],
+        temperature: 0.1,
+        max_tokens: 5,
       });
 
-      const aiJson = await aiRes.json();
-      const raw = aiJson?.choices?.[0]?.message?.content?.trim();
+      const raw = completion?.choices?.[0]?.message?.content?.trim();
       const rating = Number(raw);
+      this.logger.log('Received AI rating:', rating);
 
       if (isNaN(rating) || rating < 0 || rating > 10) {
-        throw new Error("Invalid rating returned by AI.");
+        throw new Error(`Groq returned invalid rating: ${raw}`);
       }
 
-      // ------------------------------
-      // 4) Save AI rating and update final rating
-      // ------------------------------
+      // 5. Save rating
       assignment.ai_rating = rating;
       assignment.final_rating = assignment.manual_rating ?? rating;
 
@@ -926,6 +879,7 @@ export class AssignmentsService {
       };
 
     } catch (err) {
+      this.logger.error("Groq AI error:", err);
       throw new InternalServerErrorException({
         message: "AI analysis failed",
         error: err.message,
