@@ -762,6 +762,24 @@ export class AssignmentsService {
     }
   }
 
+  // Fix corrupted buffer from PostgreSQL
+  private fixPgByteA(data: Buffer | string | null): Buffer | null {
+    if (!data) return null;
+
+    // Postgres BYTEA returns as string: "\\x25504446..."
+    if (typeof data === "string" && data.startsWith("\\x")) {
+      return Buffer.from(data.replace("\\x", ""), "hex");
+    }
+
+    // Already a buffer
+    if (Buffer.isBuffer(data)) {
+      return Buffer.from(data);
+    }
+
+    // Any other string
+    return Buffer.from(data);
+  }
+
   async analyzeAssignmentWithAI(id: number, context: string = "") {
     try {
       // Fetch assignment with required fields
@@ -788,12 +806,21 @@ export class AssignmentsService {
       // 1) Get file buffer (DB first, then file system)
       // ------------------------------
       if (assignment.fileData) {
-        buffer = assignment.fileData;
+        const fixedBuffer = this.fixPgByteA(assignment.fileData);
+        if (!fixedBuffer) {
+          throw new Error("Failed to process file data from database.");
+        }
+        buffer = fixedBuffer;
       } else if (assignment.file_path) {
-        buffer = await this.storage.getFile(assignment.file_path);
-        if (!buffer) {
+        const fileData = await this.storage.getFile(assignment.file_path);
+        if (!fileData) {
           throw new Error("File not found on disk. Please re-upload the file.");
         }
+        const fixedBuffer = this.fixPgByteA(fileData);
+        if (!fixedBuffer) {
+          throw new Error("Failed to process file data from storage.");
+        }
+        buffer = fixedBuffer;
       } else {
         throw new Error("Assignment has no stored file. Please re-upload the file.");
       }
@@ -810,11 +837,64 @@ export class AssignmentsService {
       // If PDF
       if (assignment.fileType?.includes("pdf")) {
         try {
-          const pdfParse = require("pdf-parse");
-          const pdfData = await pdfParse(buffer);
+          // Ensure buffer is properly formatted for pdf-parse
+          const fixedBuffer = this.fixPgByteA(buffer);
+          if (!fixedBuffer) {
+            throw new Error("Failed to process PDF buffer");
+          }
+          
+          // 1️⃣ Log buffer information
+          this.logger.log('📦 Fixed PDF Buffer Type:', typeof fixedBuffer);
+          this.logger.log('📦 Is Buffer:', Buffer.isBuffer(fixedBuffer));
+          this.logger.log('📦 Buffer length:', fixedBuffer.length);
+          
+          if (fixedBuffer) {
+            // 2️⃣ Log first 10 bytes in hex and text
+            const startBytes = fixedBuffer.slice(0, 10);
+            this.logger.log('📄 PDF buffer start (first 10 bytes):', startBytes);
+            this.logger.log('📄 Hex representation:', startBytes.toString('hex'));
+            
+            // 3️⃣ Check PDF header
+            const header = fixedBuffer.slice(0, 4).toString();
+            this.logger.log('📄 PDF Header Text:', header);
+            
+            if (header !== "%PDF") {
+              this.logger.error('❌ INVALID PDF HEADER — buffer is corrupted before parsing');
+              this.logger.error('Expected: %PDF, Got:', header);
+              
+              // 4️⃣ Additional debug: Check for common issues
+              const bufferStr = fixedBuffer.toString('utf8', 0, 50);
+              if (bufferStr.includes('\x25') || bufferStr.includes('\x2e')) {
+                this.logger.error('⚠️  Buffer appears to contain escaped hex string (\x25)');
+              }
+              if (bufferStr.includes('PDF-')) {
+                this.logger.log('ℹ️  PDF marker found but at wrong position');
+              }
+              
+              // Try to find PDF header in first 100 bytes
+              const searchWindow = fixedBuffer.slice(0, 100);
+              const pdfPos = searchWindow.indexOf('%PDF');
+              if (pdfPos > 0) {
+                this.logger.log(`ℹ️  Found PDF header at position ${pdfPos}`);
+              }
+            } else {
+              this.logger.log('✅ PDF header OK');
+            }
+          }
+          
+          // 5️⃣ Now try to parse the PDF
+          this.logger.log('🔍 Attempting to parse PDF...');
+          const pdfData = await pdfParse(fixedBuffer);
           extractedText = pdfData.text?.trim() || "";
+          
+          // 6️⃣ Log extraction results
+          this.logger.log(`✅ PDF parsed successfully. Extracted text length: ${extractedText.length}`);
+          if (extractedText.length > 0) {
+            this.logger.log(`📝 Text preview: ${extractedText.substring(0, 100).replace(/\s+/g, ' ')}...`);
+          }
         } catch (err) {
-          throw new Error("Failed to extract text from PDF. File may be corrupted.");
+          this.logger.error('PDF parse error:', err);
+          throw new Error(`Failed to extract text from PDF: ${err.message}`);
         }
       }
       // If normal text file
