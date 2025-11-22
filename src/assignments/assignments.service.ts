@@ -4,9 +4,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Connection, Not, IsNull, getConnection } from 'typeorm';
 import Groq from 'groq-sdk';
 
-// PDF text extraction
-// Using require for pdf-parse (compatible with version 2.4.5)
-const pdfParse = require('pdf-parse');
+// FIX: pdf-parse must be imported as default for Node 22 / ESM
+import pdfParse from "pdf-parse";
 
 import { MulterFile } from '../common/types';
 import { Assignment } from './entities/assignment.entity';
