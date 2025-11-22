@@ -1,9 +1,8 @@
 import * as multer from 'multer';
 import { Injectable, Logger, NotFoundException, Inject, InternalServerErrorException } from '@nestjs/common';
-// PDF and OCR imports
-// FIX: pdf-parse must use CommonJS require
+// PDF text extraction
+// Using CommonJS require for pdf-parse
 const pdfParse = require('pdf-parse');
-const Tesseract = require('tesseract.js');
 import { MulterFile } from '../common/types';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Connection, Not, IsNull, getConnection } from 'typeorm';
@@ -124,7 +123,7 @@ export class AssignmentsService {
       throw new NotFoundException(`Register with ID ${assignment.registerId} not found`);
     }
 
-    // Include location metadata when saving the file
+    // Save to disk with full location-based path
     const relativePath = await this.storage.saveAssignment(
       assignmentId,
       file.buffer,
@@ -133,14 +132,16 @@ export class AssignmentsService {
         state: register.state || 'Unknown',
         district: register.district || 'Unknown',
         mandal: register.mandal || 'Unknown',
-        school: register.schoolCorrespondentName || 'Unknown_School'
-      }
+        school: register.schoolCorrespondentName || 'Unknown_School',
+      },
     );
 
+    // ✅ Also store file in DB so AI can always read it
     assignment.file_path = relativePath;
     assignment.fileType = file.mimetype;
     assignment.fileSize = file.size;
-    // Remove fileData as we're now storing files on disk
+    assignment.fileData = file.buffer;
+
     await this.assignmentRepository.save(assignment);
 
     return { assignmentId, relativePath };
@@ -480,12 +481,13 @@ export class AssignmentsService {
       // Set basic file information
       assignment.registerId = registerId;
       assignment.fileName = file.originalname;
-      // Ensure buffer is not undefined before assignment
+
       if (!file.buffer) {
         throw new Error('File buffer is empty');
       }
-      // Don't store file data directly in the database
-      assignment.fileData = null;
+
+      // ✅ Store PDF in DB so AI can always read it (even if disk is wiped)
+      assignment.fileData = file.buffer;
       assignment.fileSize = file.size;
       assignment.fileType = file.mimetype;
       assignment.context = data.context || null;
@@ -578,16 +580,24 @@ export class AssignmentsService {
         .getRepository(Assignment)
         .save(assignment);
         
-      // Save the file using the storage service
+      // Save the file using the storage service (with location-based folders)
       try {
         const filePath = await this.storage.saveAssignment(
           savedAssignment.id,
           file.buffer,
-          file.originalname
+          file.originalname,
+          {
+            state: register.state || 'Unknown',
+            district: register.district || 'Unknown',
+            mandal: register.mandal || 'Unknown',
+            school: register.schoolCorrespondentName || 'Unknown_School',
+          },
         );
-        
-        // Update the assignment with the file path
+
+        // Update the assignment with the file path (for browsing / tree)
         savedAssignment.file_path = filePath;
+
+        // ✅ Keep DB fileData as well (already set above)
         await queryRunner.manager.getRepository(Assignment).save(savedAssignment);
       } catch (storageError) {
         this.logger.error('Failed to save file to storage:', storageError);
