@@ -842,21 +842,33 @@ export class AssignmentsService {
       // 4. Call Groq using official SDK
       this.logger.log('Calling Groq API with text length:', extractedText.length);
       
-      // 5. Call Groq API with recommended settings
+      const prompt = `You are an expert evaluator of student assignments.
+
+Evaluate the following essay on:
+"${context || 'General writing quality'}"
+
+Score it from **0 to 10** based on:
+- relevance to the topic,
+- clarity,
+- originality,
+- writing quality,
+- grammar,
+- meaningful content.
+
+Rules:
+- NEVER return 0 unless the text is truly empty or nonsense.
+- Return ONLY valid JSON: {"rating": <number>}
+
+Essay text:
+${extractedText.substring(0, 15000)}`;
+
+      // 5. Call Groq API with improved settings
       const groqResponse = await this.groq.chat.completions.create({
         model: 'llama-3.3-70b-versatile',
-        temperature: 0,
-        max_tokens: 10,
+        temperature: 0.4,  // Slightly higher temperature for more varied ratings
+        max_tokens: 50,
         messages: [
-          {
-            role: 'user',
-            content: `Rate this student's assignment strictly from 0 to 10.
-            Return ONLY valid JSON:
-            {"rating": <number>}
-            
-            Text:
-            ${extractedText.substring(0, 15000)}`
-          }
+          { role: 'user', content: prompt }
         ]
       });
 
