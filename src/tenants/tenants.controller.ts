@@ -1,4 +1,7 @@
-import { Controller, Get, Param, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Param, NotFoundException, Post, UseInterceptors, UploadedFile, Body, BadRequestException } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname } from 'path';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Tenant } from './tenant.entity';
@@ -9,6 +12,37 @@ export class TenantsController {
     @InjectRepository(Tenant)
     private readonly tenantRepo: Repository<Tenant>,
   ) {}
+
+  @Post('upload-image')
+  @UseInterceptors(FileInterceptor('file', {
+    storage: diskStorage({
+      destination: './uploads/tenants',
+      filename: (req, file, cb) => {
+        const ext = extname(file.originalname);
+        cb(null, `${Date.now()}${ext}`);
+      }
+    })
+  }))
+  async uploadTenantImage(
+    @UploadedFile() file: Express.Multer.File,
+    @Body('tenant_id') tenant_id: string,
+    @Body('side') side: 'left' | 'right'
+  ) {
+    if (!file) throw new BadRequestException('No file uploaded');
+
+    const imageUrl = `/uploads/tenants/${file.filename}`;
+
+    if (side === 'left') {
+      await this.tenantRepo.update({ tenant_id }, { image_left: imageUrl });
+    } else {
+      await this.tenantRepo.update({ tenant_id }, { image_right: imageUrl });
+    }
+
+    return {
+      success: true,
+      image_url: imageUrl,
+    };
+  }
 
   @Get(':id/header')
   async getTenantHeader(@Param('id') id: string) {
