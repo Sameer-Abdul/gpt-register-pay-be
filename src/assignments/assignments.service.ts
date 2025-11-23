@@ -841,31 +841,70 @@ export class AssignmentsService {
 
       // 4. Call Groq using official SDK
       this.logger.log('Calling Groq API with text length:', extractedText.length);
-      const completion = await this.groq.chat.completions.create({
-        model: "openai/gpt-oss-20b",
-        messages: [
-          {
-            role: "system",
-            content: "Respond ONLY with a number between 0 and 10."
-          },
-          {
-            role: "user",
-            content: extractedText
-          },
-        ],
+      const prompt = `You are an evaluation system. You MUST return ONLY a JSON response with a numeric rating.
+
+Rate the following essay on a scale of 0 to 10 based on:
+- Clarity (20%): How clearly the ideas are presented
+- Relevance to topic (30%): How well the content addresses the given topic
+- Structure (20%): Logical flow and organization of ideas
+- Originality (15%): Unique insights or perspectives
+- Grammar (15%): Correct use of language and mechanics
+
+Rules:
+- The rating MUST be a number between 0 and 10 with one decimal place
+- NEVER output text outside JSON  
+- NEVER explain your reasoning  
+- NEVER output anything other than the JSON object
+- ALWAYS follow this exact format: {"rating": X.X}
+
+Example valid responses:
+{"rating": 7.5}
+{"rating": 4.2}
+
+Essay to evaluate:
+"${extractedText.substring(0, 15000)}"`; // Limit text length to avoid token limits
+
+      this.logger.log(`Calling Groq API with prompt (${prompt.length} chars)`);
+
+      // 4. Call Groq API with improved settings
+      const groqResponse = await this.groq.chat.completions.create({
+        model: 'mixtral-8x7b-32768',
         temperature: 0.1,
-        max_tokens: 5
+        max_tokens: 50,
+        messages: [
+          { 
+            role: 'system', 
+            content: 'You are an AI assistant that evaluates essays. You must return ONLY a JSON object with a rating field.' 
+          },
+          { 
+            role: 'user', 
+            content: prompt 
+          }
+        ]
       });
 
-      const raw = completion?.choices?.[0]?.message?.content?.trim();
-      const rating = Number(raw);
-      this.logger.log('Received AI rating:', rating);
+      const content = groqResponse.choices?.[0]?.message?.content?.trim();
+      this.logger.log('Received AI response:', content);
 
-      if (isNaN(rating) || rating < 0 || rating > 10) {
-        throw new Error(`Groq returned invalid rating: ${raw}`);
+      if (!content) {
+        throw new Error("Empty response from AI service");
       }
 
-      // 5. Save rating
+      // 5. Parse the response
+      let rating: number;
+      try {
+        const result = JSON.parse(content);
+        rating = parseFloat(result.rating);
+        
+        if (isNaN(rating) || rating < 0 || rating > 10) {
+          throw new Error(`Invalid rating value: ${result.rating}`);
+        }
+      } catch (error) {
+        this.logger.error(`Failed to parse AI response: ${content}`, error);
+        return this.handleFallbackRating(id, context, new Error(`Invalid AI response format: ${error.message}`));
+      }
+
+      // 6. Save rating
       assignment.ai_rating = rating;
       assignment.final_rating = assignment.manual_rating ?? rating;
 
