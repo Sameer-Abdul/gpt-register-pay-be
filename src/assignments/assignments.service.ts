@@ -841,44 +841,21 @@ export class AssignmentsService {
 
       // 4. Call Groq using official SDK
       this.logger.log('Calling Groq API with text length:', extractedText.length);
-      const prompt = `You are an evaluation system. You MUST return ONLY a JSON response with a numeric rating.
-
-Rate the following essay on a scale of 0 to 10 based on:
-- Clarity (20%): How clearly the ideas are presented
-- Relevance to topic (30%): How well the content addresses the given topic
-- Structure (20%): Logical flow and organization of ideas
-- Originality (15%): Unique insights or perspectives
-- Grammar (15%): Correct use of language and mechanics
-
-Rules:
-- The rating MUST be a number between 0 and 10 with one decimal place
-- NEVER output text outside JSON  
-- NEVER explain your reasoning  
-- NEVER output anything other than the JSON object
-- ALWAYS follow this exact format: {"rating": X.X}
-
-Example valid responses:
-{"rating": 7.5}
-{"rating": 4.2}
-
-Essay to evaluate:
-"${extractedText.substring(0, 15000)}"`; // Limit text length to avoid token limits
-
-      this.logger.log(`Calling Groq API with prompt (${prompt.length} chars)`);
-
-      // 4. Call Groq API with improved settings
+      
+      // 5. Call Groq API with recommended settings
       const groqResponse = await this.groq.chat.completions.create({
-        model: 'mixtral-8x7b-32768',
-        temperature: 0.1,
-        max_tokens: 50,
+        model: 'llama-3.3-70b-versatile',
+        temperature: 0,
+        max_tokens: 10,
         messages: [
-          { 
-            role: 'system', 
-            content: 'You are an AI assistant that evaluates essays. You must return ONLY a JSON object with a rating field.' 
-          },
-          { 
-            role: 'user', 
-            content: prompt 
+          {
+            role: 'user',
+            content: `Rate this student's assignment strictly from 0 to 10.
+            Return ONLY valid JSON:
+            {"rating": <number>}
+            
+            Text:
+            ${extractedText.substring(0, 15000)}`
           }
         ]
       });
