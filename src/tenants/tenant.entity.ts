@@ -17,11 +17,12 @@ export class Tenant {
   @Column({ nullable: true })
   address: string;
 
-  @Column({ name: 'image_url_left', nullable: true })
-  image_left: string;
+@Column({ name: 'image_url_left', type: 'text', nullable: true })
+image_left: string;
 
-  @Column({ name: 'image_url_right', nullable: true })
-  image_right: string;
+@Column({ name: 'image_url_right', type: 'text', nullable: true })
+image_right: string;
+
 
   @Column({ default: 'AUTO' })
   header_format: string;
