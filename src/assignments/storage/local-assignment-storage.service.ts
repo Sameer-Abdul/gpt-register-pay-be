@@ -37,7 +37,14 @@ export class LocalAssignmentStorageService implements AssignmentStorage {
     const district = meta?.district || 'Unknown';
     const mandal = meta?.mandal || 'Unknown';
     const school = meta?.school || 'Unknown_School';
-    const context = meta?.context || 'General';
+    
+    // Use context from DB (assignments table)
+    let context = meta?.context;
+    
+    // If DB context is null/empty → fallback to General
+    if (!context || context.trim() === '') {
+      context = 'General';
+    }
 
     // Sanitize all path segments by replacing spaces with underscores
     const sanitizedState = state.replace(/\s+/g, '_');

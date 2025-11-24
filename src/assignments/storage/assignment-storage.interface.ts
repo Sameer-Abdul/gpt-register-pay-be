@@ -22,6 +22,7 @@ export interface AssignmentStorage {
       district: string;
       mandal: string;
       school: string;
+      context?: string;
     }
   ): Promise<string>;
 

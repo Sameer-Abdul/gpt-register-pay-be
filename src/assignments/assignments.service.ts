@@ -141,6 +141,7 @@ export class AssignmentsService {
         district: register.district || 'Unknown',
         mandal: register.mandal || 'Unknown',
         school: register.schoolCorrespondentName || 'Unknown_School',
+        context: assignment.context || 'General', // Pass the assignment's context
       },
     );
 
