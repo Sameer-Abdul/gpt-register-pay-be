@@ -26,6 +26,7 @@ export class LocalAssignmentStorageService implements AssignmentStorage {
       district: string;
       mandal: string;
       school: string;
+      context?: string;
     }
   ): Promise<string> {
     const basePath = this.configService.get<string>('ASSIGNMENT_BASE_PATH') || 'assignments';
@@ -36,34 +37,38 @@ export class LocalAssignmentStorageService implements AssignmentStorage {
     const district = meta?.district || 'Unknown';
     const mandal = meta?.mandal || 'Unknown';
     const school = meta?.school || 'Unknown_School';
+    const context = meta?.context || 'General';
 
-    // Sanitize all path segments
-    const sanitizedState = sanitizeSegment(state);
-    const sanitizedDistrict = sanitizeSegment(district);
-    const sanitizedMandal = sanitizeSegment(mandal);
-    const sanitizedSchool = sanitizeSegment(school);
+    // Sanitize all path segments by replacing spaces with underscores
+    const sanitizedState = state.replace(/\s+/g, '_');
+    const sanitizedDistrict = district.replace(/\s+/g, '_');
+    const sanitizedMandal = mandal.replace(/\s+/g, '_');
+    const sanitizedSchool = school.replace(/\s+/g, '_');
+    const sanitizedContext = context.replace(/\s+/g, '_');
 
-    // Create a directory structure based on location
+    // Create the directory structure: State → District → Mandal → School → Context
     const dir = path.join(
       baseDir,
       sanitizedState,
       sanitizedDistrict,
       sanitizedMandal,
       sanitizedSchool,
-      assignmentId.toString()
+      sanitizedContext
     );
     
+    // Create directories recursively
     await fs.mkdir(dir, { recursive: true });
 
     // Generate a safe filename with the original extension
     const ext = path.extname(originalName || '') || '';
-    const baseName = sanitizeSegment(path.basename(originalName || 'assignment', ext));
-    const safeFileName = `${baseName}${ext}`;
+    const baseName = path.basename(originalName || 'assignment', ext);
+    const safeFileName = `${baseName.replace(/[^\w\-\.]/g, '_')}${ext}`;
     const fullPath = path.join(dir, safeFileName);
 
+    // Write the file
     await fs.writeFile(fullPath, file);
 
-    // Return the relative path
+    // Return the relative path with forward slashes for consistency
     return path.relative(baseDir, fullPath).split(path.sep).join('/');
   }
 
